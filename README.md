@@ -62,19 +62,63 @@ como `ALUNO` — veja `contas/signals.py`).
 Todo endpoint (exceto `/api/health/` e `/api/token/`) exige o header
 `Authorization: Bearer <token>`.
 
-## Indo para a Azure
+## Deploy na Azure
 
-Nada aqui muda de código — só de configuração. Quando o Azure Database for
-PostgreSQL estiver provisionado, copie `.env.example` para `.env` e
-preencha `DATABASE_URL` com a string de conexão do banco (o projeto já
-sabe usar Postgres via essa variável, veja `config/settings.py`). Local sem
-esse `.env`, continua tudo em SQLite.
+O professor definiu que o banco de produção também é **SQLite** (mesmo
+motor do ambiente local) — então não precisa provisionar nenhum banco
+separado, só o App Service. Resumo dos passos (via Azure CLI; dá pra fazer
+os mesmos passos pelo Portal, na aba "Deployment Center"):
+
+```bash
+# 1. Grupo de recursos e plano (B1 é barato; use F1 se o plano gratuito aceitar)
+az group create --name easyassets-rg --location brazilsouth
+az appservice plan create --name easyassets-plan --resource-group easyassets-rg --sku B1 --is-linux
+
+# 2. O Web App em si, já apontando pro runtime Python
+az webapp create --name easyassets-backend --resource-group easyassets-rg \
+  --plan easyassets-plan --runtime "PYTHON:3.11"
+
+# 3. Variáveis de ambiente (equivalente ao .env, mas nas configurações do app)
+az webapp config appsettings set --name easyassets-backend --resource-group easyassets-rg --settings \
+  SECRET_KEY="troque-por-uma-chave-grande-e-aleatoria" \
+  DEBUG="False" \
+  DATABASE_URL="sqlite:////home/data/db.sqlite3" \
+  CORS_ALLOWED_ORIGINS="https://<url-do-painel-web-do-miguel>" \
+  SCM_DO_BUILD_DURING_DEPLOYMENT="true"
+
+# 4. Comando de inicialização (mesmo conteúdo do startup.sh deste repositório)
+az webapp config set --name easyassets-backend --resource-group easyassets-rg \
+  --startup-file "gunicorn --bind=0.0.0.0:8000 --timeout 600 config.wsgi"
+
+# 5. Conectar o deploy a este repositório GitHub (ou use o Deployment Center no Portal)
+az webapp deployment source config --name easyassets-backend --resource-group easyassets-rg \
+  --repo-url https://github.com/MiguelSantos1910/ProjetoIntegrador_Backend --branch main --manual-integration
+```
+
+Pontos importantes:
+
+- **`DATABASE_URL=sqlite:////home/data/db.sqlite3`** (repare nas 4 barras)
+  é obrigatório — sem isso, o arquivo do banco fica dentro de
+  `/home/site/wwwroot`, que é apagado e recriado a cada novo deploy, e
+  vocês perderiam os dados cadastrados toda vez que subissem uma atualização.
+- O arquivo `.deployment` deste repositório já manda a Azure rodar
+  `collectstatic` e `migrate` automaticamente a cada deploy — não precisa
+  fazer isso manualmente.
+- SQLite na Azure App Service tem uma limitação conhecida: o
+  armazenamento persistente é um compartilhamento de rede, que não lida
+  bem com o travamento de arquivo que o SQLite usa para escrever. Para o
+  volume de uso de um projeto acadêmico isso tende a não aparecer, mas se
+  o log mostrar `database is locked`, é essa a causa — não é bug do código.
+- Assim que o painel web do Miguel tiver uma URL, atualize
+  `CORS_ALLOWED_ORIGINS` com ela (senão o navegador bloqueia as chamadas
+  à API por causa do CORS).
 
 ## Próximos passos (conforme o Plano de Trabalho)
 
 - **L2.2 / L2.3** já estão cobertos por este esqueleto — falta só ajustar
   os dados reais do inventário (trocar os placeholders `PAT-...` do
   `seed_ativos.py` pelos números de patrimônio verdadeiros).
+- **Deploy na Azure** (resto da L2.1): seguir os passos da seção acima.
 - **M2.2** (Miguel): já dá pra apontar o Vue para `POST /api/token/` e
   `GET /api/contas/me/` para montar a tela de login.
 - **G2.1/G2.3** (Guilherme): `ativos/tests.py` é o ponto de partida do

@@ -4,4 +4,10 @@ djangorestframework-simplejwt>=5.3
 django-cors-headers>=4.4
 django-filter>=24.3
 django-environ>=0.11
-psycopg2-binary>=2.9
+gunicorn>=22.0
+whitenoise>=6.7
+
+# Banco de produção definido pelo professor: SQLite (o projeto já roda com
+# ele por padrão). Deixe a linha abaixo comentada; só descomente se um dia
+# o grupo migrar para Postgres na Azure.
+# psycopg2-binary>=2.9

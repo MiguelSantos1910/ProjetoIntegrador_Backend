@@ -1,0 +1,4 @@
+; Instrui o sistema de build da Azure (Oryx) a rodar collectstatic e a
+; aplicar as migrações automaticamente a cada novo deploy.
+[config]
+POST_BUILD_COMMAND = python manage.py collectstatic --noinput && python manage.py migrate --noinput
