@@ -2,12 +2,16 @@
 Configuração do projeto Easy_Assets (backend).
 
 Local: roda com SQLite direto, sem precisar configurar nada.
-Azure: defina a variável de ambiente DATABASE_URL (ex.:
-  postgres://usuario:senha@servidor.postgres.database.azure.com:5432/nome_do_banco?sslmode=require
-) que o projeto passa a usar o Postgres da Azure automaticamente.
-Veja o .env.example.
+Azure: o professor definiu que o banco de produção também é SQLite. Para
+que o arquivo do banco sobreviva a cada novo deploy, aponte-o para uma
+pasta fora de /home/site/wwwroot (que é substituída a cada deploy) — defina
+na Azure a variável de ambiente:
+  DATABASE_URL=sqlite:////home/data/db.sqlite3
+(repare nas 4 barras: 3 do esquema "sqlite://" + 1 do caminho absoluto).
+Veja o .env.example e o README (seção "Deploy na Azure").
 """
 
+import os
 from datetime import timedelta
 from pathlib import Path
 
@@ -21,6 +25,13 @@ environ.Env.read_env(BASE_DIR / ".env")  # não falha se o arquivo não existir
 SECRET_KEY = env("SECRET_KEY", default="django-insecure-troque-esta-chave-em-producao")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
+
+# A Azure App Service expõe o nome do site nessa variável de ambiente
+# automaticamente (ex.: "easyassets-backend.azurewebsites.net") — isso
+# libera esse domínio sem precisar configurar ALLOWED_HOSTS manualmente.
+_azure_hostname = os.environ.get("WEBSITE_HOSTNAME")
+if _azure_hostname and "*" not in ALLOWED_HOSTS and _azure_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_azure_hostname)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -41,6 +52,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # serve os arquivos estáticos do /admin na Azure
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -70,7 +82,9 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 # ---------------------------------------------------------------------------
-# Banco de dados: SQLite local por padrão; Postgres na Azure via DATABASE_URL
+# Banco de dados: SQLite sempre (local e na Azure, por decisão do professor).
+# Na Azure, DATABASE_URL aponta pra um caminho persistente fora de wwwroot —
+# veja o comentário no topo do arquivo e o README.
 # ---------------------------------------------------------------------------
 DATABASES = {
     "default": env.db("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}")
@@ -89,6 +103,11 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"  # onde o "collectstatic" junta os arquivos para a Azure servir
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ---------------------------------------------------------------------------
