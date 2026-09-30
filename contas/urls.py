@@ -1,7 +1,17 @@
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+from .views import MeView, UsuarioViewSet
 
-from .views import MeView
+router = DefaultRouter()
 
+router.register(
+    "usuarios",
+    UsuarioViewSet,
+    basename = "usuarios"
+)
+
+# /api/contas/usuarios -> Rota que faz o CRUD de usuarios
 urlpatterns = [
     path("me/", MeView.as_view(), name="me"),
+    path("", include(router.urls)),
 ]
