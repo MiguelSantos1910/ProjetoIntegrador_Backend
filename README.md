@@ -54,11 +54,11 @@ como `ALUNO` — veja `contas/signals.py`).
 | POST | `/api/token/` | Login — recebe `username`/`password`, devolve `access`/`refresh` (JWT) |
 | POST | `/api/token/refresh/` | Renova o token de acesso |
 | GET | `/api/contas/me/` | Dados do usuário logado + papel |
+| GET/PATCH/UPDATE/DELETE | `/api/contas/usuario` | Consulta, cria, deleta ou atualiza os usuários |
 | GET/POST | `/api/ativos/` | Listar (com filtros `?tipo=`, `?status=`, `?sala=`, `?codigo_qr=`) / cadastrar ativo |
 | GET/PATCH/DELETE | `/api/ativos/<id>/` | Detalhe (com histórico incluso) / editar / remover |
 | GET/POST | `/api/historico/` | Consultar ou lançar um evento de movimentação |
 | GET | `/api/health/` | Ping simples, útil para checar se o deploy na Azure está de pé |
-| GET/PATCH/UPDATE/DELETE | `/api/contas/usuario` | Consulta, cria, deleta ou atualiza os usuários |
 
 Todo endpoint (exceto `/api/health/` e `/api/token/`) exige o header
 `Authorization: Bearer <token>`.
