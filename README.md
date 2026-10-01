@@ -58,6 +58,7 @@ como `ALUNO` — veja `contas/signals.py`).
 | GET/PATCH/DELETE | `/api/ativos/<id>/` | Detalhe (com histórico incluso) / editar / remover |
 | GET/POST | `/api/historico/` | Consultar ou lançar um evento de movimentação |
 | GET | `/api/health/` | Ping simples, útil para checar se o deploy na Azure está de pé |
+| GET/PATCH/UPDATE/DELETE | `/api/contas/usuario` | Consulta, cria, deleta ou atualiza os usuários |
 
 Todo endpoint (exceto `/api/health/` e `/api/token/`) exige o header
 `Authorization: Bearer <token>`.
