@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     # apps do projeto
     "ativos",
     "contas",
+    "ordens_manutencao",
 ]
 
 MIDDLEWARE = [
