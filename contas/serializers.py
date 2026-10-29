@@ -1,4 +1,6 @@
+
 from django.contrib.auth.models import User
+from django.db import transaction
 from rest_framework import serializers
 
 from .models import Perfil
@@ -7,7 +9,7 @@ from .models import Perfil
 class MeSerializer(serializers.ModelSerializer):
     papel = serializers.CharField(
         source="perfil.papel",
-        read_only=True
+        read_only=True,
     )
 
     class Meta:
@@ -25,7 +27,7 @@ class MeSerializer(serializers.ModelSerializer):
 class UsuarioSerializer(serializers.ModelSerializer):
     papel = serializers.CharField(
         source="perfil.papel",
-        read_only=True
+        read_only=True,
     )
 
     class Meta:
@@ -44,7 +46,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
 class UsuarioCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True,
-        required=True
+        required=True,
     )
 
     class Meta:
@@ -57,13 +59,22 @@ class UsuarioCreateSerializer(serializers.ModelSerializer):
             "password",
         ]
 
+    @transaction.atomic
     def create(self, validated_data):
         password = validated_data.pop("password")
 
         usuario = User.objects.create_user(
             password=password,
-            **validated_data
+            **validated_data,
         )
+
+        # Garante que o usuário recém-criado tenha perfil de aluno.
+        perfil, _ = Perfil.objects.get_or_create(
+            usuario=usuario,
+        )
+
+        perfil.papel = Perfil.Papel.ALUNO
+        perfil.save(update_fields=["papel"])
 
         return usuario
 
@@ -71,7 +82,7 @@ class UsuarioCreateSerializer(serializers.ModelSerializer):
 class UsuarioUpdateSerializer(serializers.ModelSerializer):
     papel = serializers.ChoiceField(
         choices=Perfil.Papel.choices,
-        required=False
+        required=False,
     )
 
     class Meta:
@@ -85,20 +96,21 @@ class UsuarioUpdateSerializer(serializers.ModelSerializer):
             "papel",
         ]
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         papel = validated_data.pop("papel", None)
 
         instance = super().update(
             instance,
-            validated_data
+            validated_data,
         )
 
         if papel is not None:
             perfil, _ = Perfil.objects.get_or_create(
-                usuario=instance
+                usuario=instance,
             )
 
             perfil.papel = papel
-            perfil.save()
+            perfil.save(update_fields=["papel"])
 
         return instance

@@ -17,7 +17,7 @@ class Perfil(models.Model):
     usuario = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="perfil"
     )
-    papel = models.CharField(max_length=20, choices=Papel.choices)
+    papel = models.CharField(max_length=20, choices=Papel.choices, default=Papel.ALUNO)
 
     def __str__(self):
         return f"{self.usuario.username} ({self.get_papel_display()})"
