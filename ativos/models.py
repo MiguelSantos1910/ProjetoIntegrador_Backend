@@ -22,6 +22,7 @@ class Ativo(models.Model):
         ATIVO = "ATIVO", "Ativo"
         EM_MANUTENCAO = "EM_MANUTENCAO", "Em manutenção"
         DEVOLVIDO = "DEVOLVIDO", "Devolvido"
+        INATIVO = "INATIVO", "Inativo"
 
     tipo = models.CharField(max_length=20, choices=Tipo.choices)
     descricao = models.CharField(
@@ -71,8 +72,9 @@ class HistoricoMovimentacao(models.Model):
         ENTREGA = "ENTREGA", "Entrega"
         DEVOLUCAO = "DEVOLUCAO", "Devolução"
         MANUTENCAO = "MANUTENCAO", "Manutenção"
+        INATIVO = "INATIVO", "Inativo"
 
-    ativo = models.ForeignKey(Ativo, on_delete=models.CASCADE, related_name="historico")
+    ativo = models.ForeignKey(Ativo, on_delete=models.PROTECT, related_name="historico")
     tipo_evento = models.CharField(max_length=20, choices=TipoEvento.choices)
     descricao = models.TextField(blank=True)
     usuario = models.ForeignKey(

@@ -11,9 +11,18 @@ class PodeAlterarAtivo(BasePermission):
     """
 
     def has_permission(self, request, view):
-        if not (request.user and request.user.is_authenticated):
+        user = request.user
+
+        if not user or not user.is_authenticated:
             return False
+
+        if user.is_superuser:
+            return True
+
         if request.method in SAFE_METHODS:
             return True
-        papel = getattr(getattr(request.user, "perfil", None), "papel", None)
-        return papel in ("PROFESSOR", "SUPORTE") or request.user.is_superuser
+
+        perfil = getattr(user, "perfil", None)
+        papel = getattr(perfil, "papel", None)
+
+        return papel in {"PROFESSOR", "SUPORTE"}
