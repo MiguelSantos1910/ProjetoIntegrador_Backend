@@ -1,10 +1,8 @@
-
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import status, viewsets
+from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
 
 from .models import Ativo, HistoricoMovimentacao
 from .permissions import PodeAlterarAtivo
@@ -24,6 +22,7 @@ class AtivoViewSet(viewsets.ModelViewSet):
 
     queryset = Ativo.objects.all().prefetch_related("historico")
     permission_classes = [PodeAlterarAtivo]
+
     filter_backends = [DjangoFilterBackend]
     filterset_fields = [
         "status",
@@ -51,11 +50,44 @@ class AtivoViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def perform_update(self, serializer):
-        ativo = serializer.save()
+        ativo = self.get_object()
+        status_anterior = ativo.status
 
-        # Não cria eventos genéricos para qualquer edição.
-        # Movimentações específicas devem ser registradas
-        # pelas respectivas operações de negócio.
+        ativo = serializer.save()
+        status_novo = ativo.status
+
+        # Não registra evento quando o status permanece igual.
+        if status_anterior == status_novo:
+            return
+
+        eventos_por_status = {
+            Ativo.Status.EM_MANUTENCAO:
+                HistoricoMovimentacao.TipoEvento.MANUTENCAO,
+
+            Ativo.Status.DEVOLVIDO:
+                HistoricoMovimentacao.TipoEvento.DEVOLUCAO,
+
+            Ativo.Status.INATIVO:
+                HistoricoMovimentacao.TipoEvento.INATIVO,
+        }
+
+        tipo_evento = eventos_por_status.get(status_novo)
+
+        # Registra somente as transições com eventos definidos.
+        if tipo_evento:
+            status_display = dict(Ativo.Status.choices)
+
+            HistoricoMovimentacao.objects.create(
+                ativo=ativo,
+                tipo_evento=tipo_evento,
+                descricao=(
+                    f"Status alterado de "
+                    f"{status_display.get(status_anterior, status_anterior)} "
+                    f"para "
+                    f"{status_display.get(status_novo, status_novo)}."
+                ),
+                usuario=self.request.user,
+            )
 
     def destroy(self, request, *args, **kwargs):
         """
@@ -80,6 +112,7 @@ class HistoricoMovimentacaoViewSet(viewsets.ModelViewSet):
     ).all()
 
     serializer_class = HistoricoMovimentacaoSerializer
+
     permission_classes = [
         IsAuthenticated,
         PodeAlterarAtivo,
