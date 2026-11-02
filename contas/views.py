@@ -1,4 +1,3 @@
-
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -6,7 +5,7 @@ from django.db import transaction
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -27,6 +26,10 @@ from .serializers import (
 )
 
 
+# ---------------------------------------------------------------------------
+# FUNÇÕES AUXILIARES
+# ---------------------------------------------------------------------------
+
 def usuario_eh_professor(user):
     """
     Verifica se o usuário é professor ou superusuário.
@@ -38,26 +41,51 @@ def usuario_eh_professor(user):
     if user.is_superuser:
         return True
 
-    perfil = getattr(user, "perfil", None)
+    return Perfil.objects.filter(
+        usuario=user,
+        papel=Perfil.Papel.PROFESSOR,
+    ).exists()
 
-    return getattr(perfil, "papel", None) == Perfil.Papel.PROFESSOR
 
+def obter_ip(request):
+    """
+    Obtém o endereço IP da requisição.
+    """
+
+    if not request:
+        return None
+
+    return request.META.get("REMOTE_ADDR") or None
+
+
+# ---------------------------------------------------------------------------
+# LOGIN
+# POST /api/token/
+# ---------------------------------------------------------------------------
 
 class LoginView(TokenObtainPairView):
     """
-    POST /api/token/
+    Autentica o usuário utilizando JWT.
 
-    Autentica o usuário e registra o login.
+    O LoginTokenSerializer é responsável por:
+    - Controlar as tentativas de login.
+    - Bloquear após cinco tentativas incorretas.
+    - Aplicar bloqueio de 3 minutos.
+    - Registrar login bem-sucedido.
+    - Registrar falhas e bloqueios na auditoria.
     """
 
     serializer_class = LoginTokenSerializer
 
 
+# ---------------------------------------------------------------------------
+# LOGOUT
+# POST /api/contas/logout/
+# ---------------------------------------------------------------------------
+
 class LogoutView(APIView):
     """
-    POST /api/contas/logout/
-
-    Invalida o refresh token e registra o logout.
+    Invalida o refresh token e registra o evento LOGOUT.
     """
 
     permission_classes = [IsAuthenticated]
@@ -67,59 +95,96 @@ class LogoutView(APIView):
 
         refresh_token = request.data.get("refresh")
 
-        if not refresh_token:
+        if not refresh_token or not isinstance(refresh_token, str):
             return Response(
-                {"detail": "O refresh token é obrigatório."},
+                {
+                    "detail": "O refresh token é obrigatório."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
             token = RefreshToken(refresh_token)
 
-            # Impede que um usuário invalide o token de outra conta.
-            if str(token.get("user_id")) != str(request.user.pk):
+            # Verifica se o token pertence ao usuário autenticado.
+            token_user_id = token.get("user_id")
+
+            if str(token_user_id) != str(request.user.pk):
                 return Response(
-                    {"detail": "O token informado não pertence ao usuário autenticado."},
+                    {
+                        "detail": (
+                            "O token informado não pertence "
+                            "ao usuário autenticado."
+                        )
+                    },
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
+            # Invalida o refresh token.
             token.blacklist()
 
+            # Registra o logout somente após invalidar o token.
             LogConta.objects.create(
                 usuario=request.user,
                 tipo_evento=LogConta.TipoEvento.LOGOUT,
                 descricao="Logout realizado com sucesso.",
-                ip=request.META.get("REMOTE_ADDR"),
+                ip=obter_ip(request),
             )
 
             return Response(
-                {"detail": "Logout realizado com sucesso."},
+                {
+                    "detail": "Logout realizado com sucesso."
+                },
                 status=status.HTTP_200_OK,
             )
 
         except TokenError:
             return Response(
-                {"detail": "Refresh token inválido ou expirado."},
+                {
+                    "detail": "Refresh token inválido ou expirado."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
 
+# ---------------------------------------------------------------------------
+# USUÁRIO AUTENTICADO
+# GET /api/contas/me/
+# ---------------------------------------------------------------------------
+
 class MeView(APIView):
     """
-    GET /api/contas/me/
-
     Retorna os dados do usuário autenticado.
     """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+
+        serializer = MeSerializer(request.user)
+
         return Response(
-            MeSerializer(request.user).data
+            serializer.data,
+            status=status.HTTP_200_OK,
         )
 
 
+# ---------------------------------------------------------------------------
+# GERENCIAMENTO DE USUÁRIOS
+# ---------------------------------------------------------------------------
+
 class UsuarioViewSet(viewsets.ModelViewSet):
+    """
+    Gerenciamento de usuários.
+
+    Permissões:
+    - Cadastro: público, com perfil ALUNO por padrão.
+    - Consulta: usuário autenticado.
+    - Consulta de todos os usuários: professor ou superusuário.
+    - Edição: professor ou superusuário.
+    - Exclusão: professor ou superusuário.
+    - Alteração de senha: próprio usuário ou professor.
+    """
 
     queryset = User.objects.select_related(
         "perfil"
@@ -155,6 +220,12 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             pk=user.pk
         )
 
+    # -----------------------------------------------------------------------
+    # ATUALIZAR USUÁRIO
+    # PUT /api/contas/usuarios/{id}/
+    # PATCH /api/contas/usuarios/{id}/
+    # -----------------------------------------------------------------------
+
     def update(self, request, *args, **kwargs):
 
         if not usuario_eh_professor(request.user):
@@ -181,6 +252,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             **kwargs,
         )
 
+    # -----------------------------------------------------------------------
+    # EXCLUIR USUÁRIO
+    # DELETE /api/contas/usuarios/{id}/
+    # -----------------------------------------------------------------------
+
     def destroy(self, request, *args, **kwargs):
 
         if not usuario_eh_professor(request.user):
@@ -201,6 +277,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             **kwargs,
         )
 
+    # -----------------------------------------------------------------------
+    # ALTERAR SENHA
+    # PATCH /api/contas/usuarios/{id}/senha/
+    # -----------------------------------------------------------------------
+
     @action(
         detail=True,
         methods=["patch"],
@@ -211,6 +292,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
         usuario = self.get_object()
 
+        # Usuário comum só pode alterar a própria senha.
         if (
             usuario.pk != request.user.pk
             and not usuario_eh_professor(request.user)
@@ -221,9 +303,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
         nova_senha = request.data.get("password")
 
-        if not nova_senha:
+        if not isinstance(nova_senha, str) or not nova_senha:
             return Response(
-                {"detail": "A nova senha é obrigatória."},
+                {
+                    "password": "A nova senha é obrigatória."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -235,55 +319,106 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
         except ValidationError as exc:
             return Response(
-                {"password": list(exc.messages)},
+                {
+                    "password": list(exc.messages)
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        usuario.set_password(nova_senha)
+        with transaction.atomic():
 
-        usuario.save(
-            update_fields=["password"]
-        )
+            usuario.set_password(nova_senha)
+
+            usuario.save(
+                update_fields=["password"]
+            )
 
         return Response(
-            {"detail": "Senha alterada com sucesso."},
+            {
+                "detail": "Senha alterada com sucesso."
+            },
             status=status.HTTP_200_OK,
         )
 
 
+# ---------------------------------------------------------------------------
+# AUDITORIA DE CONTAS
+# GET /api/contas/auditoria/
+# ---------------------------------------------------------------------------
+
 class LogContaViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    Consulta os logs de cadastro, login e logout.
+    Consulta os registros de auditoria das contas.
 
-    A consulta é permitida somente para professores
-    e superusuários.
+    Eventos registrados:
+    - CADASTRO
+    - CADASTRO_FALHA
+    - LOGIN
+    - LOGIN_FALHA
+    - LOGIN_BLOQUEADO
+    - LOGOUT
+
+    Somente professores e superusuários podem consultar.
     """
 
     queryset = LogConta.objects.select_related(
         "usuario"
-    ).all()
+    ).all().order_by("-data")
 
     serializer_class = LogContaSerializer
+
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
 
         if not usuario_eh_professor(self.request.user):
             raise PermissionDenied(
-                "Somente professores podem consultar os logs das contas."
+                "Somente professores podem consultar "
+                "os logs das contas."
             )
 
         queryset = self.queryset
 
+        # ---------------------------------------------------------------
+        # FILTRO POR USUÁRIO
+        # Exemplo: /api/contas/auditoria/?usuario=2
+        # ---------------------------------------------------------------
+
         usuario_id = self.request.query_params.get("usuario")
-        tipo_evento = self.request.query_params.get("tipo_evento")
 
         if usuario_id:
+
+            if not usuario_id.isdigit():
+                raise DRFValidationError({
+                    "usuario": "Informe um ID de usuário válido."
+                })
+
             queryset = queryset.filter(
                 usuario_id=usuario_id
             )
 
+        # ---------------------------------------------------------------
+        # FILTRO POR TIPO DE EVENTO
+        # Exemplo: /api/contas/auditoria/?tipo_evento=LOGIN_FALHA
+        # ---------------------------------------------------------------
+
+        tipo_evento = self.request.query_params.get("tipo_evento")
+
         if tipo_evento:
+
+            tipos_validos = {
+                escolha[0]
+                for escolha in LogConta.TipoEvento.choices
+            }
+
+            if tipo_evento not in tipos_validos:
+                raise DRFValidationError({
+                    "tipo_evento": (
+                        "Tipo de evento inválido. "
+                        f"Valores permitidos: {', '.join(sorted(tipos_validos))}."
+                    )
+                })
+
             queryset = queryset.filter(
                 tipo_evento=tipo_evento
             )
