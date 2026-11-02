@@ -1,14 +1,11 @@
+
 """
 Configuração do projeto Easy_Assets (backend).
 
-Local: roda com SQLite direto, sem precisar configurar nada.
-Azure: o professor definiu que o banco de produção também é SQLite. Para
-que o arquivo do banco sobreviva a cada novo deploy, aponte-o para uma
-pasta fora de /home/site/wwwroot (que é substituída a cada deploy) — defina
-na Azure a variável de ambiente:
-  DATABASE_URL=sqlite:////home/data/db.sqlite3
-(repare nas 4 barras: 3 do esquema "sqlite://" + 1 do caminho absoluto).
-Veja o .env.example e o README (seção "Deploy na Azure").
+Local: utiliza SQLite diretamente.
+
+Azure: utiliza SQLite persistente. Configure a variável:
+DATABASE_URL=sqlite:////home/data/db.sqlite3
 """
 
 import os
@@ -17,43 +14,74 @@ from pathlib import Path
 
 import environ
 
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(DEBUG=(bool, True))
-environ.Env.read_env(BASE_DIR / ".env")  # não falha se o arquivo não existir
+environ.Env.read_env(BASE_DIR / ".env")
 
-SECRET_KEY = env("SECRET_KEY", default="django-insecure-troque-esta-chave-em-producao")
+
+# ---------------------------------------------------------------------------
+# CONFIGURAÇÕES GERAIS
+# ---------------------------------------------------------------------------
+
+SECRET_KEY = env(
+    "SECRET_KEY",
+    default="django-insecure-troque-esta-chave-em-producao"
+)
+
 DEBUG = env("DEBUG")
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 
-# A Azure App Service expõe o nome do site nessa variável de ambiente
-# automaticamente (ex.: "easyassets-backend.azurewebsites.net") — isso
-# libera esse domínio sem precisar configurar ALLOWED_HOSTS manualmente.
+ALLOWED_HOSTS = env.list(
+    "ALLOWED_HOSTS",
+    default=["*"]
+)
+
+# Azure App Service
 _azure_hostname = os.environ.get("WEBSITE_HOSTNAME")
-if _azure_hostname and "*" not in ALLOWED_HOSTS and _azure_hostname not in ALLOWED_HOSTS:
+
+if (
+    _azure_hostname
+    and "*" not in ALLOWED_HOSTS
+    and _azure_hostname not in ALLOWED_HOSTS
+):
     ALLOWED_HOSTS.append(_azure_hostname)
 
+
+# ---------------------------------------------------------------------------
+# APLICATIVOS INSTALADOS
+# ---------------------------------------------------------------------------
+
 INSTALLED_APPS = [
+    # Django
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # terceiros
+
+    # Terceiros
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
-    # apps do projeto
+
+    # Aplicativos do EASY ASSET
     "ativos",
     "contas",
     "ordens_manutencao",
 ]
 
+
+# ---------------------------------------------------------------------------
+# MIDDLEWARE
+# ---------------------------------------------------------------------------
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",  # serve os arquivos estáticos do /admin na Azure
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -63,7 +91,13 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+
 ROOT_URLCONF = "config.urls"
+
+
+# ---------------------------------------------------------------------------
+# TEMPLATES
+# ---------------------------------------------------------------------------
 
 TEMPLATES = [
     {
@@ -80,61 +114,125 @@ TEMPLATES = [
     },
 ]
 
+
 WSGI_APPLICATION = "config.wsgi.application"
 
+
 # ---------------------------------------------------------------------------
-# Banco de dados: SQLite sempre (local e na Azure, por decisão do professor).
-# Na Azure, DATABASE_URL aponta pra um caminho persistente fora de wwwroot —
-# veja o comentário no topo do arquivo e o README.
+# BANCO DE DADOS
+# SQLite local e Azure
 # ---------------------------------------------------------------------------
+
 DATABASES = {
-    "default": env.db("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}")
+    "default": env.db(
+        "DATABASE_URL",
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
+    )
 }
+
+
+# ---------------------------------------------------------------------------
+# VALIDAÇÃO DE SENHAS
+# ---------------------------------------------------------------------------
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"
+    },
 ]
 
+
+# ---------------------------------------------------------------------------
+# INTERNACIONALIZAÇÃO
+# ---------------------------------------------------------------------------
+
 LANGUAGE_CODE = "pt-br"
+
 TIME_ZONE = "America/Sao_Paulo"
+
 USE_I18N = True
+
 USE_TZ = True
 
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"  # onde o "collectstatic" junta os arquivos para a Azure servir
-STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
-}
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ---------------------------------------------------------------------------
-# Django REST Framework + autenticação JWT
+# ARQUIVOS ESTÁTICOS
 # ---------------------------------------------------------------------------
+
+STATIC_URL = "static/"
+
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# ---------------------------------------------------------------------------
+# DJANGO REST FRAMEWORK
+# ---------------------------------------------------------------------------
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
+
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
     ],
 }
 
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(hours=8),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-}
 
 # ---------------------------------------------------------------------------
-# CORS — libera o painel web (Vue) e o app mobile (Flutter) a consumir a API.
-# Em desenvolvimento libera tudo; em produção troque por CORS_ALLOWED_ORIGINS
-# com a URL real do painel web (o app Flutter não é afetado por CORS).
+# SIMPLE JWT
 # ---------------------------------------------------------------------------
-CORS_ALLOW_ALL_ORIGINS = env.bool("CORS_ALLOW_ALL_ORIGINS", default=True)
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+
+SIMPLE_JWT = {
+    # Tempo de validade do Access Token
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=8),
+
+    # Tempo de validade do Refresh Token
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+
+    # Renovação automática do Refresh Token
+    "ROTATE_REFRESH_TOKENS": True,
+
+    # Invalida o Refresh Token anterior após a renovação
+    "BLACKLIST_AFTER_ROTATION": True,
+
+}
+
+
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+
+CORS_ALLOW_ALL_ORIGINS = env.bool(
+    "CORS_ALLOW_ALL_ORIGINS",
+    default=True
+)
+
+CORS_ALLOWED_ORIGINS = env.list(
+    "CORS_ALLOWED_ORIGINS",
+    default=[]
+)
