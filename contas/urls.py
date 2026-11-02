@@ -1,4 +1,3 @@
-
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
@@ -9,6 +8,11 @@ from .views import (
     LogContaViewSet,
 )
 
+
+# ---------------------------------------------------------------------------
+# ROUTER
+# ---------------------------------------------------------------------------
+
 router = DefaultRouter()
 
 # CRUD de usuários
@@ -18,14 +22,20 @@ router.register(
     basename="usuarios",
 )
 
-# Consulta dos logs de contas
+# Consulta dos logs de auditoria das contas
 router.register(
-    "logs",
+    "auditoria",
     LogContaViewSet,
-    basename="logs-contas",
+    basename="auditoria-contas",
 )
 
+
+# ---------------------------------------------------------------------------
+# URLS
+# ---------------------------------------------------------------------------
+
 urlpatterns = [
+
     # Dados do usuário autenticado
     path(
         "me/",
@@ -40,7 +50,7 @@ urlpatterns = [
         name="logout",
     ),
 
-    # Rotas do CRUD e dos logs
+    # Rotas do CRUD de usuários e auditoria
     path(
         "",
         include(router.urls),
