@@ -214,7 +214,7 @@ Também é possível criar as contas pela tela de cadastro do painel (todas nasc
 | Alterar papel, nome ou e-mail de usuários | ❌ | ❌ | ✅ |
 | Trocar a própria senha | ✅ | ✅ | ✅ |
 | Consultar a auditoria de contas | ❌ | ❌ | ✅ |
-| Gerar e restaurar backups | ❌ | ❌ | ✅ |
+| Gerar, baixar e restaurar backups | ❌ | ❌ | ✅ |
 
 Operações não permitidas retornam `403`; sem token, `401`. O superusuário tem as mesmas permissões do professor.
 
@@ -282,6 +282,7 @@ GET /api/ativos/?codigo_qr=0147fe01-1ef0-4bf9-8cf5-4345907cd036
 | `GET` | `/api/backups/` | Lista os backups (somente professor) |
 | `POST` | `/api/backups/` | Gera um backup (somente professor) |
 | `POST` | `/api/backups/<nome>/restaurar/` | Restaura. Corpo `{"confirmacao": "RESTAURAR"}` (somente professor) |
+| `GET` | `/api/backups/<nome>/download/` | Baixa o arquivo do backup; grava `BACKUP_BAIXADO` (somente professor) |
 | `GET` | `/api/health/` | Verificação de disponibilidade (público) |
 
 ## Segurança
@@ -295,7 +296,7 @@ Resumo do que está implementado. A lista completa de riscos, medidas, casos de 
 - **Rastreabilidade:** nada é excluído; histórico e logs são somente leitura.
 - **Auditoria** de cadastro, login, falha, bloqueio, logout e backup.
 - **Sessão:** refresh rotacionado, com blacklist e invalidado no logout.
-- **Backup** com restauração testada.
+- **Backup** com restauração testada e download registrado na auditoria.
 - **Segredos** fora do Git (`.env`, banco e backups no `.gitignore`).
 
 ## Testes automatizados
@@ -305,14 +306,14 @@ python manage.py test               # todos
 python manage.py test contas        # só um app
 ```
 
-São **40 testes**:
+São **43 testes**:
 
 | App | O que cobre |
 |---|---|
 | `contas` | Login correto e errado, bloqueio na 5ª tentativa, logout que invalida o refresh, cadastro sempre `ALUNO`, senha fraca, senha fora do log, escalada de privilégio, troca de senha de outra pessoa e acesso à auditoria |
 | `ativos` | Cadastro com histórico, eventos de cada mudança de status, aluno sem permissão de escrita, ativo sem exclusão, histórico imutável e busca pelo código QR |
 | `ordens_manutencao` | Permissões por papel, log de criação e de status, data de conclusão, cancelamento, status inválido, ordem sem exclusão e logs somente leitura |
-| `backups` | Acesso por papel, geração, limite de arquivos, confirmação obrigatória, nome inválido, restauração e desfazer a restauração |
+| `backups` | Acesso por papel, geração, download (com log e só pelo professor), limite de arquivos, confirmação obrigatória, nome inválido, restauração e desfazer a restauração |
 
 O workflow [`.github/workflows/testes.yml`](.github/workflows/testes.yml) roda `makemigrations --check` e os testes em todo push para o `main` e em todo pull request.
 
@@ -324,7 +325,9 @@ python manage.py restaurar_banco                            # lista os backups
 python manage.py restaurar_banco db_AAAAMMDD_HHMMSS.sqlite3 # restaura (pede "RESTAURAR")
 ```
 
-Também pelo painel web, na tela **Backup** (somente professor). Os arquivos ficam em `BACKUP_DIR`, fora do Git, e o estado atual é salvo automaticamente antes de cada restauração. Restaurar volta **o banco inteiro** à data do backup, inclusive usuários e logs.
+Também pelo painel web, na tela **Backup** (somente professor), que permite gerar, **baixar** e restaurar. Os arquivos ficam em `BACKUP_DIR`, fora do Git, e o estado atual é salvo automaticamente antes de cada restauração. Restaurar volta **o banco inteiro** à data do backup, inclusive usuários e logs.
+
+O arquivo baixado contém os hashes de senha de todos os usuários: guarde-o em local privado, nunca no Git. Cada download fica registrado na auditoria (`BACKUP_BAIXADO`).
 
 Detalhes, agendamento diário (cron) e roteiro de evidência com prints: [`docs/backup.md`](docs/backup.md).
 

@@ -15,10 +15,11 @@ Procedimento de cópia e restauração do banco SQLite do Easy Asset (item
 - Antes de qualquer restauração, o estado atual é salvo como
   `pre_restauracao_AAAAMMDD_HHMMSS.sqlite3`. Assim a restauração também pode
   ser desfeita.
-- Só podem ser restaurados arquivos gerados pelo próprio sistema (nome no
-  formato `db_AAAAMMDD_HHMMSS.sqlite3` ou `pre_restauracao_...`). Não há upload.
-- Gerar, restaurar e falhas ficam no log de auditoria: `BACKUP_CRIADO`,
-  `BACKUP_RESTAURADO` e `BACKUP_FALHA`.
+- Só podem ser restaurados ou baixados arquivos gerados pelo próprio sistema
+  (nome no formato `db_AAAAMMDD_HHMMSS.sqlite3` ou `pre_restauracao_...`).
+  Não há upload.
+- Gerar, restaurar, baixar e falhas ficam no log de auditoria: `BACKUP_CRIADO`,
+  `BACKUP_RESTAURADO`, `BACKUP_BAIXADO` e `BACKUP_FALHA`.
 
 > **Atenção:** restaurar volta **o banco inteiro** à data do backup, inclusive
 > usuários, senhas e logs de auditoria. O que foi registrado depois do backup
@@ -27,7 +28,8 @@ Procedimento de cópia e restauração do banco SQLite do Easy Asset (item
 
 ## Pelo painel web (professor)
 
-Menu **Backup**: "Gerar backup agora" e, em cada linha da lista, "Restaurar".
+Menu **Backup**: "Gerar backup agora" e, em cada linha da lista, "Baixar" e
+"Restaurar".
 Depois de restaurar, o painel encerra a sessão, porque usuários e tokens podem
 ter mudado.
 
@@ -38,6 +40,16 @@ API usada pelo painel (somente `PROFESSOR` ou superusuário; os demais recebem `
 | `GET` | `/api/backups/` | Lista os backups (nome, data, tamanho, quantidade de ativos, usuários e ordens) |
 | `POST` | `/api/backups/` | Gera um backup agora |
 | `POST` | `/api/backups/<nome>/restaurar/` | Restaura; exige o corpo `{"confirmacao": "RESTAURAR"}` |
+| `GET` | `/api/backups/<nome>/download/` | Baixa o arquivo `.sqlite3` (grava `BACKUP_BAIXADO`) |
+
+### Download
+
+O arquivo baixado é uma cópia completa do banco e **contém os hashes de senha
+de todos os usuários**. Por isso: só o professor baixa, cada download fica na
+auditoria e a resposta vai com `Cache-Control: no-store`. Guarde a cópia num
+local privado (é a "cópia fora do servidor" recomendada abaixo), nunca no Git
+nem em pastas compartilhadas, e apague as cópias antigas. O arquivo abre em
+qualquer leitor de SQLite (por exemplo, DB Browser for SQLite).
 
 ## Pelo terminal
 
@@ -72,7 +84,8 @@ python manage.py test backups
 ```
 
 Cobrem: acesso sem login (`401`), aluno e suporte (`403`), geração e listagem pelo
-professor, limite de backups mantidos, confirmação obrigatória, nome inválido ou
+professor, download pelo professor (com log) e bloqueado para os demais,
+limite de backups mantidos, confirmação obrigatória, nome inválido ou
 inexistente, restauração que devolve o banco ao estado do backup e restauração
 desfeita pelo backup `pre_restauracao`.
 
