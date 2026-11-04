@@ -24,6 +24,9 @@ urlpatterns = [
     # Contas e auditoria
     path("api/contas/", include("contas.urls")),
 
+    # Backup e restauração do banco (somente professor)
+    path("api/backups/", include("backups.urls")),
+
     # Ativos e manutenção
     path("api/", include("ativos.urls")),
     path("api/", include("ordens_manutencao.urls")),
