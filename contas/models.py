@@ -59,6 +59,7 @@ class LogConta(models.Model):
         # Backup e restauração do banco
         BACKUP_CRIADO = "BACKUP_CRIADO", "Backup gerado"
         BACKUP_RESTAURADO = "BACKUP_RESTAURADO", "Banco restaurado"
+        BACKUP_BAIXADO = "BACKUP_BAIXADO", "Backup baixado"
         BACKUP_FALHA = "BACKUP_FALHA", "Falha no backup"
 
     usuario = models.ForeignKey(
