@@ -56,6 +56,11 @@ class LogConta(models.Model):
             "Falha na alteração de senha",
         )
 
+        # Backup e restauração do banco
+        BACKUP_CRIADO = "BACKUP_CRIADO", "Backup gerado"
+        BACKUP_RESTAURADO = "BACKUP_RESTAURADO", "Banco restaurado"
+        BACKUP_FALHA = "BACKUP_FALHA", "Falha no backup"
+
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
