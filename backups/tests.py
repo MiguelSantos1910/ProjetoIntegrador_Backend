@@ -151,3 +151,40 @@ class BackupAPITestCase(APITransactionTestCase):
         resposta = self.client.post(url_restaurar(seguranca), {"confirmacao": "RESTAURAR"})
         self.assertEqual(resposta.status_code, 200, resposta.data)
         self.assertEqual(Ativo.objects.count(), 2)
+
+    # -- Download ---------------------------------------------------------------
+
+    def test_professor_baixa_backup_com_log(self):
+        nome = self.gerar_backup()
+
+        resposta = self.client.get(f"{URL}{nome}/download/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn(f'filename="{nome}"', resposta["Content-Disposition"])
+        self.assertEqual(resposta["Cache-Control"], "no-store")
+
+        conteudo = b"".join(resposta.streaming_content)
+        self.assertEqual(conteudo, (Path(self.pasta) / nome).read_bytes())
+        self.assertTrue(conteudo.startswith(b"SQLite format 3"))
+
+        self.assertTrue(
+            LogConta.objects.filter(tipo_evento="BACKUP_BAIXADO", usuario=self.professor).exists()
+        )
+
+    def test_aluno_e_suporte_nao_baixam(self):
+        nome = self.gerar_backup()
+
+        for usuario in (self.aluno, self.suporte):
+            self.client.force_authenticate(usuario)
+            self.assertEqual(self.client.get(f"{URL}{nome}/download/").status_code, 403)
+
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(f"{URL}{nome}/download/").status_code, 401)
+        self.assertFalse(LogConta.objects.filter(tipo_evento="BACKUP_BAIXADO").exists())
+
+    def test_download_so_de_arquivos_do_sistema(self):
+        self.client.force_authenticate(self.professor)
+
+        for nome in ("db.sqlite3", "..%2Fdb.sqlite3", "settings.py", "db_20200101_000000.sqlite3"):
+            resposta = self.client.get(f"{URL}{nome}/download/")
+            self.assertIn(resposta.status_code, (400, 404), nome)

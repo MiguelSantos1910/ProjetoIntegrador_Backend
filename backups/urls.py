@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import BackupListCreateView, BackupRestaurarView
+from .views import BackupDownloadView, BackupListCreateView, BackupRestaurarView
 
 
 urlpatterns = [
@@ -9,5 +9,10 @@ urlpatterns = [
         "<str:nome>/restaurar/",
         BackupRestaurarView.as_view(),
         name="backup-restaurar",
+    ),
+    path(
+        "<str:nome>/download/",
+        BackupDownloadView.as_view(),
+        name="backup-download",
     ),
 ]
