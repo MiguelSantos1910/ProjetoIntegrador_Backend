@@ -6,3 +6,4 @@ venv/
 .venv/
 *.egg-info/
 staticfiles/
+backups_banco/
