@@ -1,0 +1,36 @@
+# Pipeline de integração contínua do back-end.
+# Roda em todo push e pull request: instala as dependências, confere se há
+# migrações pendentes e executa os testes automatizados (python manage.py test).
+name: Testes do back-end
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+
+    env:
+      # Valores só para o CI; nada aqui é segredo real.
+      SECRET_KEY: chave-apenas-para-o-ci
+      DEBUG: "False"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Conferir migrações pendentes
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Executar os testes
+        run: python manage.py test --verbosity 2
