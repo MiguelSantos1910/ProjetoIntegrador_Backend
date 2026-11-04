@@ -81,3 +81,57 @@ class HistoricoMudancaStatusTestCase(APITestCase):
         self.client.patch(f"/api/ativos/{ativo.id}/", {"descricao": "MESA NOVA"})
 
         self.assertEqual(ativo.historico.count(), 0)
+
+
+class PermissoesAtivosTestCase(APITestCase):
+    """Casos de mau uso: aluno alterando ativos, exclusão e histórico editável."""
+
+    def setUp(self):
+        self.aluno = User.objects.create_user(username="aluno_ativos", password="senha-teste-123")
+        self.professor = User.objects.create_user(username="prof_ativos", password="senha-teste-123")
+        self.professor.perfil.papel = "PROFESSOR"
+        self.professor.perfil.save()
+        self.ativo = Ativo.objects.create(tipo="MESA", descricao="MESA PERM", sala="B-111")
+
+    def test_aluno_consulta_mas_nao_altera(self):
+        self.client.force_authenticate(self.aluno)
+
+        self.assertEqual(self.client.get("/api/ativos/").status_code, 200)
+        self.assertEqual(
+            self.client.post("/api/ativos/", {"tipo": "MESA", "descricao": "X", "sala": "B-111"}).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.patch(f"/api/ativos/{self.ativo.id}/", {"sala": "OUTRA"}).status_code, 403
+        )
+        self.ativo.refresh_from_db()
+        self.assertEqual(self.ativo.sala, "B-111")
+
+    def test_ativo_nao_pode_ser_excluido(self):
+        self.client.force_authenticate(self.professor)
+
+        self.assertEqual(self.client.delete(f"/api/ativos/{self.ativo.id}/").status_code, 403)
+        self.assertTrue(Ativo.objects.filter(pk=self.ativo.id).exists())
+
+    def test_historico_nao_pode_ser_criado_editado_ou_apagado(self):
+        self.client.force_authenticate(self.professor)
+        self.client.patch(f"/api/ativos/{self.ativo.id}/", {"status": "INATIVO"})
+        evento = self.ativo.historico.first()
+
+        self.assertEqual(
+            self.client.post("/api/historico/", {"ativo": self.ativo.id, "tipo_evento": "ENTREGA"}).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.patch(f"/api/historico/{evento.id}/", {"descricao": "x"}).status_code, 403
+        )
+        self.assertEqual(self.client.delete(f"/api/historico/{evento.id}/").status_code, 403)
+        self.assertTrue(self.ativo.historico.filter(pk=evento.id).exists())
+
+    def test_busca_pelo_codigo_qr(self):
+        self.client.force_authenticate(self.aluno)
+
+        resposta = self.client.get(f"/api/ativos/?codigo_qr={self.ativo.codigo_qr}")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual([a["id"] for a in resposta.data], [self.ativo.id])
