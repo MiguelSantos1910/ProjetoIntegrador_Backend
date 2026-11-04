@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     "ativos",
     "contas",
     "ordens_manutencao",
+    "backups",
 ]
 
 
@@ -236,3 +237,14 @@ CORS_ALLOWED_ORIGINS = env.list(
     "CORS_ALLOWED_ORIGINS",
     default=[]
 )
+
+
+# ---------------------------------------------------------------------------
+# BACKUP DO BANCO (app backups)
+# ---------------------------------------------------------------------------
+
+# Pasta dos backups. Fica fora do Git (.gitignore): contém hashes de senha.
+BACKUP_DIR = env.path("BACKUP_DIR", default=BASE_DIR / "backups_banco")
+
+# Quantos backups de cada tipo manter (os mais antigos são apagados).
+BACKUP_MAX = env.int("BACKUP_MAX", default=10)

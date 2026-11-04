@@ -18,6 +18,7 @@ O desenvolvimento local utiliza SQLite e não depende da Azure. A publicação n
 - [Autenticação e permissões](#autenticação-e-permissões)
 - [Integração com Vue.js e Flutter](#integração-com-vuejs-e-flutter)
 - [Testes](#testes)
+- [Backup e restauração](#backup-e-restauração)
 - [Deploy na Azure](#deploy-na-azure)
 - [Plano de trabalho e melhorias](#plano-de-trabalho-e-melhorias)
 
@@ -368,6 +369,24 @@ Casos recomendados para ampliar a cobertura:
 - Tratamento de recursos inexistentes e dados inválidos.
 
 A lista descreve os testes a verificar e desenvolver; a execução de `python manage.py test` é necessária para confirmar o resultado real.
+
+## Backup e restauração
+
+O app `backups` gera e restaura cópias do banco SQLite, pelo painel web (somente professor) ou pelo terminal:
+
+```bash
+python manage.py backup_banco                               # gera um backup
+python manage.py restaurar_banco                            # lista os backups
+python manage.py restaurar_banco db_AAAAMMDD_HHMMSS.sqlite3 # restaura
+```
+
+| Método | Endpoint | Função |
+|---|---|---|
+| `GET` | `/api/backups/` | Lista os backups |
+| `POST` | `/api/backups/` | Gera um backup |
+| `POST` | `/api/backups/<nome>/restaurar/` | Restaura (corpo `{"confirmacao": "RESTAURAR"}`) |
+
+Os arquivos ficam em `BACKUP_DIR` (padrão `backups_banco/`, fora do Git) e o estado atual é salvo automaticamente antes de cada restauração. Detalhes, agendamento (cron) e roteiro de evidência em [`docs/backup.md`](docs/backup.md).
 
 ## Deploy na Azure
 
