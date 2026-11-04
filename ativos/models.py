@@ -73,6 +73,8 @@ class HistoricoMovimentacao(models.Model):
         DEVOLUCAO = "DEVOLUCAO", "Devolução"
         MANUTENCAO = "MANUTENCAO", "Manutenção"
         INATIVO = "INATIVO", "Inativo"
+        REATIVACAO = "REATIVACAO", "Reativação"
+        RETORNO = "RETORNO", "Retorno ao uso"
 
     ativo = models.ForeignKey(Ativo, on_delete=models.PROTECT, related_name="historico")
     tipo_evento = models.CharField(max_length=20, choices=TipoEvento.choices)

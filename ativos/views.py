@@ -71,7 +71,15 @@ class AtivoViewSet(viewsets.ModelViewSet):
                 HistoricoMovimentacao.TipoEvento.INATIVO,
         }
 
-        tipo_evento = eventos_por_status.get(status_novo)
+        if status_anterior == Ativo.Status.INATIVO:
+            # Saiu de Inativo (para qualquer status): reativação. A descrição
+            # informa para qual status o ativo voltou.
+            tipo_evento = HistoricoMovimentacao.TipoEvento.REATIVACAO
+        elif status_novo == Ativo.Status.ATIVO:
+            # Voltou a Ativo depois de manutenção ou devolução.
+            tipo_evento = HistoricoMovimentacao.TipoEvento.RETORNO
+        else:
+            tipo_evento = eventos_por_status.get(status_novo)
 
         # Registra somente as transições com eventos definidos.
         if tipo_evento:
