@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.http import FileResponse
 
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
@@ -10,6 +11,7 @@ from contas.views import obter_ip, usuario_eh_professor
 
 from .services import (
     BackupErro,
+    caminho_backup,
     criar_backup,
     listar_backups,
     restaurar_backup,
@@ -117,3 +119,42 @@ class BackupRestaurarView(APIView):
         )
 
         return Response(resultado)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/backups/<nome>/download/
+# ---------------------------------------------------------------------------
+
+class BackupDownloadView(APIView):
+    """
+    Baixa um arquivo de backup (somente professor).
+
+    O arquivo contém hashes de senha de todos os usuários: por isso só o
+    professor baixa, cada download fica na auditoria e a resposta não é
+    guardada em cache.
+    """
+
+    permission_classes = [IsAuthenticated, PodeGerenciarBackup]
+
+    def get(self, request, nome):
+        try:
+            caminho = caminho_backup(nome)
+        except BackupErro as erro:
+            return resposta_erro(request, erro, f"baixar {nome}")
+
+        registrar_log(
+            request,
+            LogConta.TipoEvento.BACKUP_BAIXADO,
+            f"Backup {nome} baixado pelo painel.",
+        )
+
+        resposta = FileResponse(
+            open(caminho, "rb"),
+            as_attachment=True,
+            filename=caminho.name,
+            content_type="application/vnd.sqlite3",
+        )
+        resposta["Cache-Control"] = "no-store"
+        resposta["X-Content-Type-Options"] = "nosniff"
+
+        return resposta

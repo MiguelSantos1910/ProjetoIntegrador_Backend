@@ -35,7 +35,8 @@ automatizado que comprova a medida (`python manage.py test`).
 | R5 | **Perda de rastreabilidade**: excluir ativo, ordem ou histórico | M | A | Ninguém exclui pela API (403); ativos são inativados; histórico e logs são somente leitura; mudanças de status geram eventos | Implementado | `test_ativo_nao_pode_ser_excluido`, `test_historico_nao_pode_ser_criado_editado_ou_apagado`, `test_ninguem_exclui_ordem`, `ativos.tests.HistoricoMudancaStatusTestCase` |
 | R6 | **Senhas fracas ou expostas** | M | A | Validadores do Django (tamanho mínimo, senha comum, só números, parecida com o usuário); hash PBKDF2; a senha nunca é gravada em log | Implementado | `test_senha_fraca_recusada`, `test_cadastro_publico_cria_aluno`, `test_log_nao_grava_a_senha` |
 | R7 | **Sessão reutilizada** após o logout ou token roubado | M | M | Refresh rotacionado e colocado na blacklist; logout invalida o refresh. Access dura 8 h | Parcial: access longo e token no `localStorage` do painel (sensível a XSS) | `LogoutTestCase.test_logout_invalida_o_refresh_token` |
-| R8 | **Perda ou corrupção do banco** | M | A | Backup com a API do SQLite, verificação de integridade, retenção, backup automático antes de restaurar e restauração testada | Implementado; pendente: `BACKUP_DIR` persistente no servidor, cron e cópia externa | `backups.tests` (8 testes), [`docs/backup.md`](backup.md) |
+| R8 | **Perda ou corrupção do banco** | M | A | Backup com a API do SQLite, verificação de integridade, retenção, backup automático antes de restaurar, restauração testada e download para guardar uma cópia fora do servidor | Implementado; pendente: `BACKUP_DIR` persistente no servidor e cron | `backups.tests` (11 testes), [`docs/backup.md`](backup.md) |
+| R15 | **Vazamento pelo download do backup**: o arquivo tem os hashes de senha de todos | B | A | Download só para o professor, nome validado (só arquivos do sistema), evento `BACKUP_BAIXADO` na auditoria e resposta sem cache; orientação de guardar a cópia em local privado | Implementado; o cuidado com a cópia baixada depende de quem baixa (política, item 6) | `test_professor_baixa_backup_com_log`, `test_aluno_e_suporte_nao_baixam`, `test_download_so_de_arquivos_do_sistema` |
 | R9 | **Interceptação do tráfego**: servidor publicado em HTTP (senha e token sem criptografia), app com `usesCleartextTraffic` e `/admin/` exposto | M | A | Nenhuma ainda | **Risco aceito temporariamente**; publicar com HTTPS (domínio e certificado) e restringir `/admin/` | — |
 | R10 | **Configuração insegura em produção**: `SECRET_KEY` padrão, `DEBUG=True`, `ALLOWED_HOSTS=*`, CORS aberto | M | A | Todas são lidas de variáveis de ambiente (`.env`), sem segredo real no código | Pendente na produção: definir os valores; `check --deploy` mostra 6 avisos | `python manage.py check --deploy` |
 | R11 | **Segredos ou dados reais no Git** | B | A | `.env`, `db.sqlite3` e `backups_banco/` no `.gitignore`; `.env.example` sem segredos no painel; dados de demonstração fictícios (`seed_ativos`) | Implementado. Observação: um backup antigo ficou no histórico de outro repositório do back; a senha do administrador da AWS foi trocada | — |
@@ -55,6 +56,8 @@ automatizado que comprova a medida (`python manage.py test`).
 | Trocar a senha de outra pessoa | recusado, senha inalterada | `test_nao_troca_senha_de_outro_usuario` |
 | Aluno ou suporte ler a auditoria | 403 | `test_auditoria_somente_professor` |
 | Restaurar arquivo fora da pasta de backups (`../`) | 400/404, nada restaurado | `backups.tests.test_nome_invalido_ou_inexistente` |
+| Aluno ou suporte baixar o banco | 403, nada baixado | `backups.tests.test_aluno_e_suporte_nao_baixam` |
+| Baixar outro arquivo do servidor (`db.sqlite3`, `settings.py`) | 400/404 | `backups.tests.test_download_so_de_arquivos_do_sistema` |
 | Usar o refresh depois do logout | 401 | `test_logout_invalida_o_refresh_token` |
 
 ## 4. Modelo de ameaça (STRIDE resumido)
@@ -72,7 +75,8 @@ automatizado que comprova a medida (`python manage.py test`).
 
 - **Auditoria de contas** (`/api/contas/auditoria/`, somente professor): `CADASTRO`,
   `CADASTRO_FALHA`, `LOGIN`, `LOGIN_FALHA`, `LOGIN_BLOQUEADO`, `LOGOUT`,
-  `BACKUP_CRIADO`, `BACKUP_RESTAURADO` e `BACKUP_FALHA`, com usuário, IP e data.
+  `BACKUP_CRIADO`, `BACKUP_RESTAURADO`, `BACKUP_BAIXADO` e `BACKUP_FALHA`, com
+  usuário, IP e data.
 - **Histórico do ativo**: `CADASTRO`, `MANUTENCAO`, `DEVOLUCAO`, `INATIVO`,
   `REATIVACAO` e `RETORNO`, com o usuário responsável.
 - **Logs da ordem de manutenção**: criação, mudança de status e atualização.
@@ -114,8 +118,10 @@ automatizado que comprova a medida (`python manage.py test`).
 5. **Incidentes:** ao notar acesso estranho, bloqueio inesperado ou dado
    alterado, avisar o professor, que consulta a auditoria e, se preciso,
    desativa a conta ou restaura um backup.
-6. **Backup:** diário e antes de mudanças grandes; a restauração é feita só pelo
-   professor e fica registrada.
+6. **Backup:** diário e antes de mudanças grandes; a restauração e o download
+   são feitos só pelo professor e ficam registrados. A cópia baixada contém
+   hashes de senha: guardar em local privado, nunca no Git ou em pasta
+   compartilhada, e apagar as cópias antigas.
 7. **Segredos:** nenhuma senha, token ou `.env` no Git; configuração de produção
    apenas por variáveis de ambiente.
 8. **Revisão periódica:** a cada entrega (E1 a E5), revisar esta lista de riscos,
