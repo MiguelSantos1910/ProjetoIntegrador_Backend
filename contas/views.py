@@ -377,7 +377,9 @@ class LogContaViewSet(viewsets.ReadOnlyModelViewSet):
                 "os logs das contas."
             )
 
-        queryset = self.queryset
+        # Cria uma nova consulta ao banco, sem reutilizar
+        # o cache de resultados de um QuerySet já avaliado.
+        queryset = self.queryset.all()
 
         # ---------------------------------------------------------------
         # FILTRO POR USUÁRIO
