@@ -136,11 +136,3 @@ python manage.py check --deploy  # avisos de configuração de produção
 
 O pipeline em `.github/workflows/testes.yml` roda os testes em todo push e pull
 request.
-
-## 10. Pendências (próximas entregas)
-
-- HTTPS no servidor publicado e no app (R9).
-- `SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS` e `CORS_ALLOWED_ORIGINS` definidos na produção (R10).
-- Alinhar o servidor publicado com o `main` (R13), com `BACKUP_DIR` em disco persistente e cron (R8).
-- Registrar mudança de papel e de senha na auditoria (R14).
-- Tratar 401 no painel com renovação automática do token e reduzir a duração do access (R7).
