@@ -88,12 +88,3 @@ professor, download pelo professor (com log) e bloqueado para os demais,
 limite de backups mantidos, confirmação obrigatória, nome inválido ou
 inexistente, restauração que devolve o banco ao estado do backup e restauração
 desfeita pelo backup `pre_restauracao`.
-
-### Roteiro manual com prints
-
-1. Entrar como professor e gerar um backup na tela **Backup** (print da lista).
-2. Cadastrar o ativo "TESTE BACKUP" e alterar a descrição de outro ativo (print).
-3. Restaurar o backup do passo 1 (print da confirmação e da mensagem de sucesso).
-4. Entrar de novo e mostrar que "TESTE BACKUP" não existe e que a descrição voltou
-   ao valor anterior (print).
-5. Mostrar o evento `BACKUP_RESTAURADO` na aba **Auditoria** (print).
