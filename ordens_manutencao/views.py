@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from rest_framework import viewsets
@@ -25,8 +26,19 @@ class OrdemManutencaoViewSet(viewsets.ModelViewSet):
     serializer_class = OrdemManutencaoSerializer
     permission_classes = [PodeAlterarOrdemManutencao]
 
+    # Campos comparados para descrever o que mudou numa atualização.
+    CAMPOS_REGISTRADOS = {
+        'descricao': 'descrição',
+        'responsavel': 'responsável',
+        'custo_estimado': 'custo estimado',
+    }
+
     def perform_create(self, serializer):
-        ordem = serializer.save()
+        # Ordem já aberta como concluída recebe a data de conclusão.
+        if serializer.validated_data.get('status') == 'Concluída':
+            ordem = serializer.save(data_conclusao=timezone.now())
+        else:
+            ordem = serializer.save()
 
         usuario = self.request.user
 
@@ -42,8 +54,18 @@ class OrdemManutencaoViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         ordem = self.get_object()
         status_anterior = ordem.status
+        valores_anteriores = {
+            campo: getattr(ordem, campo)
+            for campo in self.CAMPOS_REGISTRADOS
+        }
 
         ordem = serializer.save()
+
+        alterados = [
+            rotulo
+            for campo, rotulo in self.CAMPOS_REGISTRADOS.items()
+            if getattr(ordem, campo) != valores_anteriores[campo]
+        ]
 
         usuario = self.request.user
 
@@ -71,12 +93,12 @@ class OrdemManutencaoViewSet(viewsets.ModelViewSet):
                 status_novo=ordem.status,
             )
 
-        else:
+        if alterados:
             LogOrdemManutencao.objects.create(
                 ordem=ordem,
                 usuario=usuario if usuario.is_authenticated else None,
                 acao='Atualizada',
-                descricao='Dados da ordem de manutenção atualizados.',
+                descricao=f'Campos alterados: {", ".join(alterados)}.',
                 status_anterior=status_anterior,
                 status_novo=ordem.status,
             )
@@ -93,6 +115,8 @@ class OrdemManutencaoViewSet(viewsets.ModelViewSet):
     PodeConsultarLogOrdem,
 ])
 def listar_logs_ordem(request, ordem_id):
+    get_object_or_404(OrdemManutencao, pk=ordem_id)
+
     logs = LogOrdemManutencao.objects.filter(
         ordem_id=ordem_id
     ).select_related('usuario', 'ordem')

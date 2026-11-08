@@ -185,7 +185,7 @@ class PermissoesContasTestCase(APITestCase):
 
         resposta = self.client.patch(
             f"/api/contas/usuarios/{self.aluno.id}/senha/",
-            {"password": "Nova-Senha-789"},
+            {"password": "Nova-Senha-789", "senha_atual": SENHA},
             format="json",
         )
 
@@ -207,3 +207,143 @@ class PermissoesContasTestCase(APITestCase):
         self.assertEqual(
             self.client.post("/api/contas/auditoria/", {}, format="json").status_code, 405
         )
+
+
+class AdministracaoContasTestCase(APITestCase):
+    """Regressões da revisão do back (itens 2, 3, 6, 9 e N11)."""
+
+    def setUp(self):
+        self.aluno = criar_usuario("aluno_adm")
+        self.professor = criar_usuario("professor_adm", Perfil.Papel.PROFESSOR)
+        self.root = User.objects.create_superuser(
+            username="root_adm", password=SENHA, email="root@example.com"
+        )
+
+    def url(self, usuario, sufixo=""):
+        return f"/api/contas/usuarios/{usuario.id}/{sufixo}"
+
+    def test_professor_nao_administra_superusuario(self):
+        self.client.force_authenticate(self.professor)
+
+        self.assertEqual(
+            self.client.patch(
+                self.url(self.root, "senha/"), {"password": "Invasao-Senha-999"}, format="json"
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.patch(self.url(self.root), {"is_active": False}, format="json").status_code,
+            403,
+        )
+        self.assertEqual(self.client.delete(self.url(self.root)).status_code, 403)
+
+        self.root.refresh_from_db()
+        self.assertTrue(self.root.is_active)
+        self.assertTrue(self.root.check_password(SENHA))
+
+    def test_propria_senha_exige_senha_atual(self):
+        self.client.force_authenticate(self.aluno)
+
+        sem = self.client.patch(
+            self.url(self.aluno, "senha/"), {"password": "Nova-Senha-789"}, format="json"
+        )
+        errada = self.client.patch(
+            self.url(self.aluno, "senha/"),
+            {"password": "Nova-Senha-789", "senha_atual": "errada"},
+            format="json",
+        )
+
+        self.assertEqual(sem.status_code, 400)
+        self.assertEqual(errada.status_code, 400)
+        self.assertIn("senha_atual", errada.data)
+        self.aluno.refresh_from_db()
+        self.assertTrue(self.aluno.check_password(SENHA))
+        self.assertTrue(
+            LogConta.objects.filter(usuario=self.aluno, tipo_evento="ALTERACAO_SENHA_FALHA").exists()
+        )
+
+    def test_troca_de_senha_encerra_sessoes(self):
+        login = self.client.post(
+            "/api/token/", {"username": "aluno_adm", "password": SENHA}, format="json"
+        )
+        refresh = login.data["refresh"]
+
+        self.client.force_authenticate(self.aluno)
+        resposta = self.client.patch(
+            self.url(self.aluno, "senha/"),
+            {"password": "Nova-Senha-789", "senha_atual": SENHA},
+            format="json",
+        )
+        self.assertEqual(resposta.status_code, 200, resposta.data)
+        self.client.force_authenticate(None)
+
+        renovar = self.client.post("/api/token/refresh/", {"refresh": refresh}, format="json")
+        self.assertEqual(renovar.status_code, 401)
+        self.assertTrue(
+            LogConta.objects.filter(usuario=self.aluno, tipo_evento="SENHA_ALTERADA").exists()
+        )
+
+    def test_professor_redefine_senha_de_aluno(self):
+        self.client.force_authenticate(self.professor)
+
+        resposta = self.client.patch(
+            self.url(self.aluno, "senha/"), {"password": "Nova-Senha-789"}, format="json"
+        )
+
+        self.assertEqual(resposta.status_code, 200, resposta.data)
+        self.aluno.refresh_from_db()
+        self.assertTrue(self.aluno.check_password("Nova-Senha-789"))
+
+    def test_mudanca_de_papel_e_desativacao_geram_log(self):
+        self.client.force_authenticate(self.professor)
+
+        self.client.patch(self.url(self.aluno), {"papel": "SUPORTE"}, format="json")
+        self.client.patch(self.url(self.aluno), {"is_active": False}, format="json")
+
+        eventos = set(
+            LogConta.objects.filter(usuario=self.aluno).values_list("tipo_evento", flat=True)
+        )
+        self.assertIn("PAPEL_ALTERADO", eventos)
+        self.assertIn("CONTA_DESATIVADA", eventos)
+
+    def test_professor_nao_rebaixa_a_si_mesmo(self):
+        self.client.force_authenticate(self.professor)
+
+        resposta = self.client.patch(self.url(self.professor), {"papel": "ALUNO"}, format="json")
+
+        self.assertEqual(resposta.status_code, 403)
+        self.professor.perfil.refresh_from_db()
+        self.assertEqual(self.professor.perfil.papel, Perfil.Papel.PROFESSOR)
+
+    def test_exclusao_gera_log(self):
+        self.client.force_authenticate(self.professor)
+
+        self.assertEqual(self.client.delete(self.url(self.aluno)).status_code, 204)
+        self.assertTrue(LogConta.objects.filter(tipo_evento="USUARIO_EXCLUIDO").exists())
+
+    def test_evento_sem_usuario_aparece_como_nao_identificado(self):
+        self.client.post("/api/token/", {"username": "nao_existe", "password": "x"}, format="json")
+
+        self.client.force_authenticate(self.professor)
+        resposta = self.client.get("/api/contas/auditoria/")
+        nomes = [log["usuario_nome"] for log in resposta.data if log["tipo_evento"] == "LOGIN_FALHA"]
+        self.assertIn("Não identificado", nomes)
+
+
+class LimpezaTentativasTestCase(APITestCase):
+    """N11: tentativas de login antigas (e de usuários inexistentes) são apagadas."""
+
+    def test_tentativas_antigas_sao_removidas_na_proxima_falha(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from .models import TentativaLogin
+
+        self.client.post("/api/token/", {"username": "fantasma", "password": "x"}, format="json")
+        TentativaLogin.objects.update(atualizado_em=timezone.now() - timedelta(days=2))
+
+        self.client.post("/api/token/", {"username": "outro", "password": "x"}, format="json")
+
+        self.assertFalse(TentativaLogin.objects.filter(username="fantasma").exists())
+        self.assertTrue(TentativaLogin.objects.filter(username="outro").exists())

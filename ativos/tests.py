@@ -135,3 +135,46 @@ class PermissoesAtivosTestCase(APITestCase):
 
         self.assertEqual(resposta.status_code, 200)
         self.assertEqual([a["id"] for a in resposta.data], [self.ativo.id])
+
+
+class AtivoRevisaoBackTestCase(APITestCase):
+    """Regressões da revisão do back (itens 1, 6 e 8)."""
+
+    def setUp(self):
+        self.professor = User.objects.create_user(username="prof_rev", password="senha-teste-123")
+        self.professor.perfil.papel = "PROFESSOR"
+        self.professor.perfil.save()
+        self.client.force_authenticate(self.professor)
+
+    def cadastrar(self, **extra):
+        dados = {"tipo": "TECLADO", "descricao": "TECLADO", "sala": "B-111", **extra}
+        return self.client.post("/api/ativos/", dados, format="json")
+
+    def test_varios_ativos_sem_patrimonio(self):
+        primeiro = self.cadastrar(numero_patrimonio="")
+        segundo = self.cadastrar(numero_patrimonio="  ")
+        terceiro = self.cadastrar()
+
+        for resposta in (primeiro, segundo, terceiro):
+            self.assertEqual(resposta.status_code, 201, resposta.data)
+            self.assertIsNone(resposta.data["numero_patrimonio"])
+
+    def test_patrimonio_repetido_recusado_com_400(self):
+        self.cadastrar(numero_patrimonio="PAT-1")
+
+        self.assertEqual(self.cadastrar(numero_patrimonio="PAT-1").status_code, 400)
+
+    def test_mudanca_de_sala_gera_evento(self):
+        ativo = Ativo.objects.create(tipo="MESA", descricao="MESA", sala="B-111")
+
+        self.client.patch(f"/api/ativos/{ativo.id}/", {"sala": "B-112"}, format="json")
+
+        evento = ativo.historico.get(tipo_evento="MUDANCA_SALA")
+        self.assertIn("B-112", evento.descricao)
+
+    def test_coordenadas_fora_do_intervalo(self):
+        self.assertEqual(self.cadastrar(latitude="500").status_code, 400)
+        self.assertEqual(self.cadastrar(longitude="-181").status_code, 400)
+        self.assertEqual(
+            self.cadastrar(latitude="-23.550520", longitude="-46.633308").status_code, 201
+        )

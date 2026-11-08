@@ -56,6 +56,13 @@ class LogConta(models.Model):
             "Falha na alteração de senha",
         )
 
+        # Administração de contas
+        SENHA_ALTERADA = "SENHA_ALTERADA", "Senha alterada"
+        PAPEL_ALTERADO = "PAPEL_ALTERADO", "Papel alterado"
+        CONTA_DESATIVADA = "CONTA_DESATIVADA", "Conta desativada"
+        CONTA_REATIVADA = "CONTA_REATIVADA", "Conta reativada"
+        USUARIO_EXCLUIDO = "USUARIO_EXCLUIDO", "Usuário excluído"
+
         # Backup e restauração do banco
         BACKUP_CRIADO = "BACKUP_CRIADO", "Backup gerado"
         BACKUP_RESTAURADO = "BACKUP_RESTAURADO", "Banco restaurado"

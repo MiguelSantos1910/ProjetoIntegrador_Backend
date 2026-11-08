@@ -52,9 +52,21 @@ class AtivoViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         ativo = self.get_object()
         status_anterior = ativo.status
+        sala_anterior = ativo.sala
 
         ativo = serializer.save()
         status_novo = ativo.status
+
+        if (sala_anterior or "") != (ativo.sala or ""):
+            HistoricoMovimentacao.objects.create(
+                ativo=ativo,
+                tipo_evento=HistoricoMovimentacao.TipoEvento.MUDANCA_SALA,
+                descricao=(
+                    f"Sala alterada de {sala_anterior or 'não informada'} "
+                    f"para {ativo.sala or 'não informada'}."
+                ),
+                usuario=self.request.user,
+            )
 
         # Não registra evento quando o status permanece igual.
         if status_anterior == status_novo:
