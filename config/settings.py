@@ -32,6 +32,14 @@ SECRET_KEY = env(
 
 DEBUG = env("DEBUG")
 
+# Em produção a chave padrão (pública no GitHub) não é aceita.
+if not DEBUG and SECRET_KEY.startswith("django-insecure-"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "Defina SECRET_KEY no .env antes de rodar com DEBUG=False."
+    )
+
 ALLOWED_HOSTS = env.list(
     "ALLOWED_HOSTS",
     default=["*"]
@@ -237,6 +245,27 @@ CORS_ALLOWED_ORIGINS = env.list(
     "CORS_ALLOWED_ORIGINS",
     default=[]
 )
+
+# Origens aceitas em formulários com CSRF (login do /admin/ em HTTPS).
+# Ex.: https://seuusuario.pythonanywhere.com
+CSRF_TRUSTED_ORIGINS = env.list(
+    "CSRF_TRUSTED_ORIGINS",
+    default=[]
+)
+
+
+# ---------------------------------------------------------------------------
+# HTTPS EM PRODUÇÃO
+# O servidor (PythonAnywhere, Azure, Nginx) recebe o HTTPS e repassa a
+# requisição ao Django com o cabeçalho X-Forwarded-Proto.
+# ---------------------------------------------------------------------------
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=False)
+    SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=0)
 
 
 # ---------------------------------------------------------------------------
