@@ -347,3 +347,28 @@ class LimpezaTentativasTestCase(APITestCase):
 
         self.assertFalse(TentativaLogin.objects.filter(username="fantasma").exists())
         self.assertTrue(TentativaLogin.objects.filter(username="outro").exists())
+
+
+class ListaUsuariosAtualizadaTestCase(APITestCase):
+    """A lista do professor precisa mostrar contas criadas depois da 1ª consulta."""
+
+    def test_usuario_criado_aparece_na_lista(self):
+        professor = criar_usuario("professor_lista", Perfil.Papel.PROFESSOR)
+        self.client.force_authenticate(professor)
+
+        antes = self.client.get("/api/contas/usuarios/")
+        self.assertEqual(antes.status_code, 200)
+
+        self.client.force_authenticate(None)
+        cadastro = self.client.post(
+            "/api/contas/usuarios/",
+            {"username": "aluno_novo_lista", "password": SENHA, "email": "novo@example.com"},
+            format="json",
+        )
+        self.assertEqual(cadastro.status_code, 201, cadastro.data)
+
+        self.client.force_authenticate(professor)
+        depois = self.client.get("/api/contas/usuarios/")
+
+        nomes = [usuario["username"] for usuario in depois.data]
+        self.assertIn("aluno_novo_lista", nomes)

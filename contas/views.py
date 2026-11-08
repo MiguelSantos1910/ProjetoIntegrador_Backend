@@ -217,8 +217,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
         user = self.request.user
 
+        # .all() cria uma consulta nova a cada requisição. Devolver o
+        # self.queryset da classe reaproveitava o resultado da primeira
+        # consulta, e contas criadas depois não apareciam na lista.
         if usuario_eh_professor(user):
-            return self.queryset
+            return self.queryset.all()
 
         return self.queryset.filter(
             pk=user.pk
