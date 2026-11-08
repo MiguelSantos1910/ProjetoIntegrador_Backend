@@ -13,6 +13,10 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken,
+    OutstandingToken,
+)
 
 from .models import Perfil, LogConta
 
@@ -226,31 +230,106 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     # PATCH /api/contas/usuarios/{id}/
     # -----------------------------------------------------------------------
 
-    def update(self, request, *args, **kwargs):
+    # -----------------------------------------------------------------------
+    # REGRAS DE ADMINISTRAÇÃO
+    # -----------------------------------------------------------------------
 
-        if not usuario_eh_professor(request.user):
+    def exigir_professor(self, mensagem):
+        if not usuario_eh_professor(self.request.user):
+            raise PermissionDenied(mensagem)
+
+    def proteger_superusuario(self, alvo):
+        """
+        Superusuário só é administrado por outro superusuário.
+
+        Sem isso, um professor poderia trocar a senha do superusuário e
+        entrar no Django Admin com acesso total.
+        """
+        if alvo.is_superuser and not self.request.user.is_superuser:
             raise PermissionDenied(
-                "Somente professores podem administrar usuários."
+                "Somente um superusuário pode administrar outro superusuário."
             )
 
-        return super().update(
-            request,
-            *args,
-            **kwargs,
+    def registrar(self, tipo_evento, descricao, usuario):
+        LogConta.objects.create(
+            usuario=usuario,
+            tipo_evento=tipo_evento,
+            descricao=descricao,
+            ip=obter_ip(self.request),
         )
+
+    @staticmethod
+    def encerrar_sessoes(usuario):
+        """
+        Invalida todos os refresh tokens do usuário (blacklist).
+        O access token em uso expira sozinho no prazo configurado.
+        """
+        for token in OutstandingToken.objects.filter(user=usuario):
+            BlacklistedToken.objects.get_or_create(token=token)
+
+    # -----------------------------------------------------------------------
+    # ATUALIZAR USUÁRIO
+    # PUT /api/contas/usuarios/{id}/
+    # PATCH /api/contas/usuarios/{id}/
+    # -----------------------------------------------------------------------
+
+    def update(self, request, *args, **kwargs):
+        self.exigir_professor("Somente professores podem administrar usuários.")
+        self.proteger_superusuario(self.get_object())
+
+        return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
+        self.exigir_professor("Somente professores podem administrar usuários.")
+        self.proteger_superusuario(self.get_object())
 
-        if not usuario_eh_professor(request.user):
+        return super().partial_update(request, *args, **kwargs)
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        alvo = serializer.instance
+        dados = serializer.validated_data
+        proprio = alvo.pk == self.request.user.pk
+
+        perfil = getattr(alvo, "perfil", None)
+        papel_antes = perfil.papel if perfil else Perfil.Papel.ALUNO
+        ativo_antes = alvo.is_active
+
+        papel_novo = dados.get("papel", papel_antes)
+        ativo_novo = dados.get("is_active", ativo_antes)
+
+        # Evita que alguém perca o próprio acesso por engano (e que o
+        # sistema fique sem professor).
+        if proprio and (papel_novo != papel_antes or ativo_novo != ativo_antes):
             raise PermissionDenied(
-                "Somente professores podem administrar usuários."
+                "Você não pode alterar o próprio papel nem desativar a "
+                "própria conta."
             )
 
-        return super().partial_update(
-            request,
-            *args,
-            **kwargs,
-        )
+        usuario = serializer.save()
+        autor = self.request.user.username
+
+        if papel_novo != papel_antes:
+            self.registrar(
+                LogConta.TipoEvento.PAPEL_ALTERADO,
+                f"Papel de {usuario.username} alterado de {papel_antes} "
+                f"para {papel_novo} por {autor}.",
+                usuario,
+            )
+
+        if ativo_novo != ativo_antes:
+            if not ativo_novo:
+                # Conta desativada não deve continuar com sessões abertas.
+                self.encerrar_sessoes(usuario)
+
+            self.registrar(
+                LogConta.TipoEvento.CONTA_REATIVADA
+                if ativo_novo
+                else LogConta.TipoEvento.CONTA_DESATIVADA,
+                f"Conta de {usuario.username} "
+                f"{'reativada' if ativo_novo else 'desativada'} por {autor}.",
+                usuario,
+            )
 
     # -----------------------------------------------------------------------
     # EXCLUIR USUÁRIO
@@ -258,28 +337,32 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     # -----------------------------------------------------------------------
 
     def destroy(self, request, *args, **kwargs):
-
-        if not usuario_eh_professor(request.user):
-            raise PermissionDenied(
-                "Somente professores podem excluir usuários."
-            )
+        self.exigir_professor("Somente professores podem excluir usuários.")
 
         usuario = self.get_object()
+        self.proteger_superusuario(usuario)
 
         if usuario.pk == request.user.pk:
             raise PermissionDenied(
                 "Você não pode excluir sua própria conta por esta rota."
             )
 
-        return super().destroy(
-            request,
-            *args,
-            **kwargs,
+        # O log fica com o autor, porque a conta excluída deixa de existir.
+        self.registrar(
+            LogConta.TipoEvento.USUARIO_EXCLUIDO,
+            f"Usuário {usuario.username} excluído por {request.user.username}.",
+            request.user,
         )
+
+        return super().destroy(request, *args, **kwargs)
 
     # -----------------------------------------------------------------------
     # ALTERAR SENHA
     # PATCH /api/contas/usuarios/{id}/senha/
+    # Corpo: {"password": "...", "senha_atual": "..."}
+    # - Própria senha: exige a senha atual.
+    # - Senha de outra pessoa: só professor (sem a senha atual).
+    # Depois da troca, todas as sessões da conta são encerradas.
     # -----------------------------------------------------------------------
 
     @action(
@@ -291,51 +374,73 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     def alterar_senha(self, request, pk=None):
 
         usuario = self.get_object()
+        propria = usuario.pk == request.user.pk
 
         # Usuário comum só pode alterar a própria senha.
-        if (
-            usuario.pk != request.user.pk
-            and not usuario_eh_professor(request.user)
-        ):
-            raise PermissionDenied(
-                "Você só pode alterar a própria senha."
+        if not propria and not usuario_eh_professor(request.user):
+            raise PermissionDenied("Você só pode alterar a própria senha.")
+
+        self.proteger_superusuario(usuario)
+
+        def recusar(campo, mensagens):
+            self.registrar(
+                LogConta.TipoEvento.ALTERACAO_SENHA_FALHA,
+                f"Troca de senha de {usuario.username} recusada ({campo}).",
+                usuario,
             )
+            return Response(
+                {campo: mensagens},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if propria:
+            senha_atual = request.data.get("senha_atual")
+
+            if not isinstance(senha_atual, str) or not senha_atual:
+                return recusar("senha_atual", ["Informe a senha atual."])
+
+            if not usuario.check_password(senha_atual):
+                return recusar("senha_atual", ["Senha atual incorreta."])
 
         nova_senha = request.data.get("password")
 
         if not isinstance(nova_senha, str) or not nova_senha:
-            return Response(
-                {
-                    "password": "A nova senha é obrigatória."
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            return recusar("password", ["A nova senha é obrigatória."])
+
+        if usuario.check_password(nova_senha):
+            return recusar(
+                "password",
+                ["A nova senha deve ser diferente da atual."],
             )
 
         try:
-            validate_password(
-                nova_senha,
-                user=usuario,
-            )
+            validate_password(nova_senha, user=usuario)
 
         except ValidationError as exc:
-            return Response(
-                {
-                    "password": list(exc.messages)
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return recusar("password", list(exc.messages))
 
         with transaction.atomic():
-
             usuario.set_password(nova_senha)
+            usuario.save(update_fields=["password"])
 
-            usuario.save(
-                update_fields=["password"]
+            self.encerrar_sessoes(usuario)
+
+            self.registrar(
+                LogConta.TipoEvento.SENHA_ALTERADA,
+                (
+                    "Senha alterada pelo próprio usuário."
+                    if propria
+                    else f"Senha redefinida por {request.user.username}."
+                ),
+                usuario,
             )
 
         return Response(
             {
-                "detail": "Senha alterada com sucesso."
+                "detail": (
+                    "Senha alterada com sucesso. As sessões abertas foram "
+                    "encerradas; entre novamente com a nova senha."
+                )
             },
             status=status.HTTP_200_OK,
         )

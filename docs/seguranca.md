@@ -28,21 +28,21 @@ automatizado que comprova a medida (`python manage.py test`).
 
 | # | Risco | P | I | Medida adotada | Situação | Teste |
 |---|---|---|---|---|---|---|
-| R1 | **Força bruta no login** (tentar senhas até acertar) | A | A | Bloqueio por 3 minutos após 5 tentativas erradas, por usuário e IP; evento `LOGIN_BLOQUEADO` | Implementado | `contas.tests.LoginTestCase.test_bloqueio_na_quinta_tentativa` |
+| R1 | **Força bruta no login** (tentar senhas até acertar) | A | A | Bloqueio por 3 minutos após 5 tentativas erradas, por usuário e IP; evento `LOGIN_BLOQUEADO` | Implementado; tentativas com mais de 1 dia (inclusive de usuários inexistentes) são apagadas | `contas.tests.LoginTestCase.test_bloqueio_na_quinta_tentativa`, `LimpezaTentativasTestCase` |
 | R2 | **Acesso sem autenticação** à API | A | A | JWT obrigatório em todas as rotas (`IsAuthenticated` como padrão); só login, renovação, cadastro e `/api/health/` são públicos | Implementado | `test_rotas_protegidas_exigem_token`, `backups.tests.test_sem_login_recebe_401` |
-| R3 | **Escalada de privilégio**: autocadastro como professor ou aluno mudando o próprio papel | M | A | Cadastro público cria sempre `ALUNO` e recusa outro papel; só professor altera papéis | Implementado | `CadastroTestCase.test_cadastro_publico_nao_escolhe_papel`, `PermissoesContasTestCase.test_aluno_nao_se_promove_a_professor` |
+| R3 | **Escalada de privilégio**: autocadastro como professor ou aluno mudando o próprio papel | M | A | Cadastro público cria sempre `ALUNO` e recusa outro papel; só professor altera papéis; só superusuário administra superusuário (senha, papel, desativação, exclusão); ninguém muda o próprio papel nem se desativa | Implementado | `CadastroTestCase.test_cadastro_publico_nao_escolhe_papel`, `PermissoesContasTestCase.test_aluno_nao_se_promove_a_professor`, `test_professor_nao_administra_superusuario`, `test_professor_nao_rebaixa_a_si_mesmo` |
 | R4 | **Alteração indevida** de ativos ou ordens por quem não tem permissão | M | A | RBAC no back: aluno só consulta; professor e suporte alteram ativos e ordens; backup só professor. O front apenas esconde botões | Implementado | `ativos.tests.PermissoesAtivosTestCase`, `ordens_manutencao.tests.test_aluno_nao_abre_ordem`, `backups.tests.test_aluno_e_suporte_recebem_403` |
 | R5 | **Perda de rastreabilidade**: excluir ativo, ordem ou histórico | M | A | Ninguém exclui pela API (403); ativos são inativados; histórico e logs são somente leitura; mudanças de status geram eventos | Implementado | `test_ativo_nao_pode_ser_excluido`, `test_historico_nao_pode_ser_criado_editado_ou_apagado`, `test_ninguem_exclui_ordem`, `ativos.tests.HistoricoMudancaStatusTestCase` |
-| R6 | **Senhas fracas ou expostas** | M | A | Validadores do Django (tamanho mínimo, senha comum, só números, parecida com o usuário); hash PBKDF2; a senha nunca é gravada em log | Implementado | `test_senha_fraca_recusada`, `test_cadastro_publico_cria_aluno`, `test_log_nao_grava_a_senha` |
-| R7 | **Sessão reutilizada** após o logout ou token roubado | M | M | Refresh rotacionado e colocado na blacklist; logout invalida o refresh. Access dura 8 h | Parcial: access longo e token no `localStorage` do painel (sensível a XSS) | `LogoutTestCase.test_logout_invalida_o_refresh_token` |
+| R6 | **Senhas fracas ou expostas** | M | A | Validadores do Django (tamanho mínimo, senha comum, só números, parecida com o usuário); hash PBKDF2; a senha nunca é gravada em log ; a troca da própria senha exige a senha atual | Implementado | `test_senha_fraca_recusada`, `test_cadastro_publico_cria_aluno`, `test_log_nao_grava_a_senha`, `test_propria_senha_exige_senha_atual` |
+| R7 | **Sessão reutilizada** após o logout ou token roubado | M | M | Refresh rotacionado e colocado na blacklist; logout invalida o refresh; trocar a senha ou desativar a conta encerra todas as sessões. Access dura 8 h | Parcial: access longo e token no `localStorage` do painel (sensível a XSS) | `LogoutTestCase.test_logout_invalida_o_refresh_token`, `test_troca_de_senha_encerra_sessoes` |
 | R8 | **Perda ou corrupção do banco** | M | A | Backup com a API do SQLite, verificação de integridade, retenção, backup automático antes de restaurar, restauração testada e download para guardar uma cópia fora do servidor | Implementado; pendente: `BACKUP_DIR` persistente no servidor e cron | `backups.tests` (11 testes), [`docs/backup.md`](backup.md) |
 | R15 | **Vazamento pelo download do backup**: o arquivo tem os hashes de senha de todos | B | A | Download só para o professor, nome validado (só arquivos do sistema), evento `BACKUP_BAIXADO` na auditoria e resposta sem cache; orientação de guardar a cópia em local privado | Implementado; o cuidado com a cópia baixada depende de quem baixa (política, item 6) | `test_professor_baixa_backup_com_log`, `test_aluno_e_suporte_nao_baixam`, `test_download_so_de_arquivos_do_sistema` |
 | R9 | **Interceptação do tráfego**: servidor publicado em HTTP (senha e token sem criptografia), app com `usesCleartextTraffic` e `/admin/` exposto | M | A | Nenhuma ainda | **Risco aceito temporariamente**; publicar com HTTPS (domínio e certificado) e restringir `/admin/` | — |
 | R10 | **Configuração insegura em produção**: `SECRET_KEY` padrão, `DEBUG=True`, `ALLOWED_HOSTS=*`, CORS aberto | M | A | Todas são lidas de variáveis de ambiente (`.env`), sem segredo real no código | Pendente na produção: definir os valores; `check --deploy` mostra 6 avisos | `python manage.py check --deploy` |
 | R11 | **Segredos ou dados reais no Git** | B | A | `.env`, `db.sqlite3` e `backups_banco/` no `.gitignore`; `.env.example` sem segredos no painel; dados de demonstração fictícios (`seed_ativos`) | Implementado. Observação: um backup antigo ficou no histórico de outro repositório do back; a senha do administrador da AWS foi trocada | — |
-| R12 | **Entrada inválida** (status, tipo ou campos fora do esperado) | M | M | Validação nos serializers do DRF (choices, campos obrigatórios); erros 400 com mensagem, sem detalhes internos | Implementado | `test_status_invalido_recusado` |
+| R12 | **Entrada inválida** (status, tipo ou campos fora do esperado) | M | M | Validação nos serializers do DRF (choices, campos obrigatórios, custo não negativo, latitude e longitude em intervalos válidos, patrimônio vazio tratado como nulo); erros 400 com mensagem, sem detalhes internos | Implementado | `test_status_invalido_recusado`, `test_custo_negativo_recusado`, `test_coordenadas_fora_do_intervalo`, `test_varios_ativos_sem_patrimonio` |
 | R13 | **Instâncias divergentes**: servidor publicado rodando código diferente do GitHub | A | M | Nenhuma ainda | Pendente: atualizar o servidor com o `main` e versionar o que só existe lá | — |
-| R14 | **Ações sensíveis sem registro**: mudança de papel e de senha | M | M | Logs de login, falha, bloqueio, logout, cadastro, backup, ordens e status de ativos | Parcial: mudança de papel e de senha ainda não geram evento | — |
+| R14 | **Ações sensíveis sem registro**: mudança de papel e de senha | M | M | Logs de login, falha, bloqueio, logout, cadastro, backup, ordens, status e sala de ativos, mudança de papel, desativação, exclusão de usuário e troca de senha | Implementado | `test_mudanca_de_papel_e_desativacao_geram_log`, `test_exclusao_gera_log`, `test_mudanca_de_sala_gera_evento` |
 
 ## 3. Casos de mau uso (objetivo negativo)
 
@@ -54,6 +54,8 @@ automatizado que comprova a medida (`python manage.py test`).
 | Aluno se promover a professor | 403, papel continua ALUNO | `test_aluno_nao_se_promove_a_professor` |
 | Cadastro público como professor | 400, conta não criada | `test_cadastro_publico_nao_escolhe_papel` |
 | Trocar a senha de outra pessoa | recusado, senha inalterada | `test_nao_troca_senha_de_outro_usuario` |
+| Professor trocar a senha ou desativar o superusuário | 403, conta inalterada | `test_professor_nao_administra_superusuario` |
+| Trocar a própria senha sem saber a atual (sessão esquecida aberta) | 400, senha inalterada | `test_propria_senha_exige_senha_atual` |
 | Aluno ou suporte ler a auditoria | 403 | `test_auditoria_somente_professor` |
 | Restaurar arquivo fora da pasta de backups (`../`) | 400/404, nada restaurado | `backups.tests.test_nome_invalido_ou_inexistente` |
 | Aluno ou suporte baixar o banco | 403, nada baixado | `backups.tests.test_aluno_e_suporte_nao_baixam` |
@@ -75,13 +77,16 @@ automatizado que comprova a medida (`python manage.py test`).
 
 - **Auditoria de contas** (`/api/contas/auditoria/`, somente professor): `CADASTRO`,
   `CADASTRO_FALHA`, `LOGIN`, `LOGIN_FALHA`, `LOGIN_BLOQUEADO`, `LOGOUT`,
+  `SENHA_ALTERADA`, `ALTERACAO_SENHA_FALHA`, `PAPEL_ALTERADO`, `CONTA_DESATIVADA`,
+  `CONTA_REATIVADA`, `USUARIO_EXCLUIDO`,
   `BACKUP_CRIADO`, `BACKUP_RESTAURADO`, `BACKUP_BAIXADO` e `BACKUP_FALHA`, com
-  usuário, IP e data.
+  usuário, IP e data. Eventos sem usuário (login com usuário inexistente,
+  backup pelo terminal) aparecem como "Não identificado".
 - **Histórico do ativo**: `CADASTRO`, `MANUTENCAO`, `DEVOLUCAO`, `INATIVO`,
-  `REATIVACAO` e `RETORNO`, com o usuário responsável.
-- **Logs da ordem de manutenção**: criação, mudança de status e atualização.
+  `REATIVACAO`, `RETORNO` e `MUDANCA_SALA`, com o usuário responsável.
+- **Logs da ordem de manutenção**: criação, mudança de status e atualização
+  (com os campos alterados).
 - **Nunca são gravados**: senha, token ou hash.
-- **Pendente** (R14): mudança de papel e de senha.
 
 ## 6. Recuperação de desastres
 
