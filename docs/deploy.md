@@ -35,11 +35,18 @@ No painel do PythonAnywhere, abra **Consoles → Bash** e rode:
 git clone https://github.com/MiguelSantos1910/ProjetoIntegrador_Backend.git
 cd ProjetoIntegrador_Backend
 
-mkvirtualenv --python=/usr/bin/python3.11 easyasset
+mkvirtualenv --python=$(which python3.11) easyasset
+python -c "import subprocess, sqlite3; print('ok')"   # deve imprimir ok
 pip install -r requirements.txt
 ```
 
 > Se o console fechar, volte ao ambiente com `workon easyasset`.
+
+> **Erro `No module named '_posixsubprocess'` no `pip`:** o ambiente foi
+> criado com um Python diferente do instalado na imagem do sistema (por
+> exemplo, `/usr/bin/python3.11` quando o certo é `/usr/local/bin/python3.11`).
+> Apague e recrie: `deactivate`, `rmvirtualenv easyasset` e o `mkvirtualenv`
+> acima. A versão escolhida na aba **Web** precisa ser a mesma do ambiente.
 
 ### 3. Arquivo `.env`
 
