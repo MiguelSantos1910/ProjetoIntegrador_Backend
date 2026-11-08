@@ -101,3 +101,60 @@ class OrdemManutencaoTestCase(APITestCase):
 
         self.assertEqual(self.client.get(url_logs).status_code, 200)
         self.assertIn(self.client.post(url_logs, {}, format="json").status_code, (403, 405))
+
+
+class OrdemRevisaoBackTestCase(APITestCase):
+    """Regressões da revisão do back (itens 4, 5 e 7)."""
+
+    def setUp(self):
+        self.suporte = criar_usuario("suporte_rev", "SUPORTE")
+        self.ativo = Ativo.objects.create(tipo="GABINETE", descricao="GABINETE", sala="B-111")
+        self.client.force_authenticate(self.suporte)
+
+    def abrir(self, **extra):
+        dados = {
+            "ativo": self.ativo.id,
+            "descricao": "Troca da fonte",
+            "responsavel": "Suporte",
+            **extra,
+        }
+        return self.client.post(URL, dados, format="json")
+
+    def test_ordem_criada_concluida_tem_data_de_conclusao(self):
+        resposta = self.abrir(status="Concluída")
+
+        self.assertEqual(resposta.status_code, 201, resposta.data)
+        self.assertIsNotNone(resposta.data["data_conclusao"])
+
+    def test_custo_negativo_recusado(self):
+        self.assertEqual(self.abrir(custo_estimado="-500").status_code, 400)
+
+    def test_ativo_inativo_recusado(self):
+        self.ativo.status = Ativo.Status.INATIVO
+        self.ativo.save()
+
+        self.assertEqual(self.abrir().status_code, 400)
+
+    def test_ordem_cancelada_nao_reabre(self):
+        ordem_id = self.abrir(status="Cancelada").data["id"]
+
+        resposta = self.client.patch(f"{URL}{ordem_id}/", {"status": "Pendente"}, format="json")
+
+        self.assertEqual(resposta.status_code, 400)
+
+    def test_ativo_da_ordem_nao_muda(self):
+        ordem_id = self.abrir().data["id"]
+        outro = Ativo.objects.create(tipo="MESA", descricao="MESA", sala="B-111")
+
+        trocar = self.client.patch(f"{URL}{ordem_id}/", {"ativo": outro.id}, format="json")
+        mesmo = self.client.patch(
+            f"{URL}{ordem_id}/", {"ativo": self.ativo.id, "responsavel": "Outro"}, format="json"
+        )
+
+        self.assertEqual(trocar.status_code, 400)
+        self.assertEqual(mesmo.status_code, 200, mesmo.data)
+        log = LogOrdemManutencao.objects.filter(ordem_id=ordem_id, acao="Atualizada").get()
+        self.assertIn("responsável", log.descricao)
+
+    def test_logs_de_ordem_inexistente_retorna_404(self):
+        self.assertEqual(self.client.get(f"{URL}999999/logs/").status_code, 404)

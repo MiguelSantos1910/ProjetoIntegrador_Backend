@@ -84,12 +84,12 @@ ProjetoIntegrador_Backend/
 ### Contas (`contas`)
 
 - `Perfil`: papel de cada usuário (`PROFESSOR`, `SUPORTE` ou `ALUNO`). É criado automaticamente (`contas/signals.py`): superusuário vira `PROFESSOR`; os demais, `ALUNO`.
-- `LogConta`: auditoria de cadastro, login, falhas, bloqueio, logout e backup.
-- `TentativaLogin`: controle de tentativas. Depois de **5 senhas erradas** o login fica bloqueado por **3 minutos** para aquele usuário e IP.
+- `LogConta`: auditoria de cadastro, login, falhas, bloqueio, logout, troca de senha, mudança de papel, desativação e exclusão de usuários e backup.
+- `TentativaLogin`: controle de tentativas. Depois de **5 senhas erradas** o login fica bloqueado por **3 minutos** para aquele usuário e IP. Registros com mais de 1 dia são apagados automaticamente.
 
 ### Ativos (`ativos`)
 
-- `Ativo`: tipo (`GABINETE`, `MONITOR`, `TECLADO` ou `MESA`), descrição, número de patrimônio, **código QR** (UUID gerado pelo sistema e imutável), sala, status (`ATIVO`, `EM_MANUTENCAO`, `DEVOLVIDO` ou `INATIVO`) e datas de cadastro e atualização. Latitude e longitude estão reservadas para uma evolução futura.
+- `Ativo`: tipo (`GABINETE`, `MONITOR`, `TECLADO` ou `MESA`), descrição, número de patrimônio, **código QR** (UUID gerado pelo sistema e imutável), sala, status (`ATIVO`, `EM_MANUTENCAO`, `DEVOLVIDO` ou `INATIVO`) e datas de cadastro e atualização. Latitude e longitude estão reservadas para uma evolução futura (já validadas: −90 a 90 e −180 a 180). O patrimônio é opcional e único; quando vazio é gravado como nulo.
 - `HistoricoMovimentacao`: eventos do ativo, gravados pelo próprio sistema:
 
 | Ação | Evento |
@@ -100,6 +100,7 @@ ProjetoIntegrador_Backend/
 | Inativar | `INATIVO` |
 | Sair de Inativo (para qualquer status) | `REATIVACAO` |
 | Voltar para Ativo depois de manutenção ou devolução | `RETORNO` |
+| Mudar a sala | `MUDANCA_SALA` |
 
 Ativos **não são excluídos**: o caminho é inativar, o que preserva o histórico.
 
@@ -107,7 +108,7 @@ As categorias são os quatro **tipos fixos** do modelo `Ativo`; não há API de 
 
 ### Ordens de manutenção (`ordens_manutencao`)
 
-- `OrdemManutencao`: ativo, descrição, responsável, status (`Pendente`, `Em andamento`, `Concluída` ou `Cancelada`), custo estimado, data de abertura e data de conclusão (preenchida ao concluir).
+- `OrdemManutencao`: ativo, descrição, responsável, status (`Pendente`, `Em andamento`, `Concluída` ou `Cancelada`), custo estimado, data de abertura e data de conclusão (preenchida ao concluir, inclusive quando a ordem já é aberta como concluída). O custo não pode ser negativo, não se abre ordem para ativo inativo, o ativo da ordem não muda depois da abertura e uma ordem cancelada não é reaberta.
 - `LogOrdemManutencao`: criação, mudança de status e atualização, com status anterior, novo status, usuário e data.
 
 Ordens **não são excluídas**: o caminho é cancelar (status `Cancelada`).
@@ -212,11 +213,12 @@ Também é possível criar as contas pela tela de cadastro do painel (todas nasc
 | Excluir ativos, ordens ou histórico | ❌ | ❌ | ❌ |
 | Ver a lista de usuários | só a própria conta | só a própria conta | ✅ |
 | Alterar papel, nome ou e-mail de usuários | ❌ | ❌ | ✅ |
-| Trocar a própria senha | ✅ | ✅ | ✅ |
+| Trocar a própria senha (informando a atual) | ✅ | ✅ | ✅ |
+| Redefinir a senha de outro usuário | ❌ | ❌ | ✅ |
 | Consultar a auditoria de contas | ❌ | ❌ | ✅ |
 | Gerar, baixar e restaurar backups | ❌ | ❌ | ✅ |
 
-Operações não permitidas retornam `403`; sem token, `401`. O superusuário tem as mesmas permissões do professor.
+Operações não permitidas retornam `403`; sem token, `401`. O superusuário tem as mesmas permissões do professor, e só outro superusuário pode alterar, desativar, excluir ou trocar a senha dele. Ninguém altera o próprio papel nem desativa a própria conta.
 
 ## Endpoints da API
 
@@ -240,7 +242,7 @@ Todos exigem `Authorization: Bearer <access>`, exceto os marcados como públicos
 | `GET` | `/api/contas/usuarios/<id>/` | Consulta um usuário |
 | `PATCH` / `PUT` | `/api/contas/usuarios/<id>/` | Edita usuário e papel (somente professor) |
 | `DELETE` | `/api/contas/usuarios/<id>/` | Exclui usuário (somente professor, nunca a própria conta) |
-| `PATCH` | `/api/contas/usuarios/<id>/senha/` | Troca de senha. Corpo `{"password": "..."}` (o próprio usuário ou professor) |
+| `PATCH` | `/api/contas/usuarios/<id>/senha/` | Troca de senha. Corpo `{"password": "...", "senha_atual": "..."}`; a senha atual só é exigida na própria conta (professor redefine a de outros sem ela). Encerra todas as sessões da conta |
 | `GET` | `/api/contas/auditoria/` | Auditoria de contas (somente professor). Filtros `?usuario=<id>` e `?tipo_evento=LOGIN` |
 
 ### Ativos e histórico
@@ -306,13 +308,13 @@ python manage.py test               # todos
 python manage.py test contas        # só um app
 ```
 
-São **43 testes**:
+São **62 testes**:
 
 | App | O que cobre |
 |---|---|
-| `contas` | Login correto e errado, bloqueio na 5ª tentativa, logout que invalida o refresh, cadastro sempre `ALUNO`, senha fraca, senha fora do log, escalada de privilégio, troca de senha de outra pessoa e acesso à auditoria |
-| `ativos` | Cadastro com histórico, eventos de cada mudança de status, aluno sem permissão de escrita, ativo sem exclusão, histórico imutável e busca pelo código QR |
-| `ordens_manutencao` | Permissões por papel, log de criação e de status, data de conclusão, cancelamento, status inválido, ordem sem exclusão e logs somente leitura |
+| `contas` | Login correto e errado, bloqueio na 5ª tentativa, logout que invalida o refresh, cadastro sempre `ALUNO`, senha fraca, senha fora do log, escalada de privilégio, troca de senha (de outra pessoa, sem a senha atual e encerrando as sessões), proteção do superusuário, logs de papel, desativação e exclusão, limpeza de tentativas antigas e acesso à auditoria |
+| `ativos` | Cadastro com histórico, eventos de cada mudança de status, aluno sem permissão de escrita, ativo sem exclusão, histórico imutável, busca pelo código QR, vários ativos sem patrimônio, evento de mudança de sala e coordenadas fora do intervalo |
+| `ordens_manutencao` | Permissões por papel, log de criação e de status, data de conclusão, cancelamento, status inválido, ordem sem exclusão, logs somente leitura, ordem aberta já concluída, custo negativo, ativo inativo, ordem cancelada não reabre, ativo fixo e 404 nos logs de ordem inexistente |
 | `backups` | Acesso por papel, geração, download (com log e só pelo professor), limite de arquivos, confirmação obrigatória, nome inválido, restauração e desfazer a restauração |
 
 O workflow [`.github/workflows/testes.yml`](.github/workflows/testes.yml) roda `makemigrations --check` e os testes em todo push para o `main` e em todo pull request.

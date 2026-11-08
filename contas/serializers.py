@@ -431,6 +431,25 @@ class LoginTokenSerializer(TokenObtainPairSerializer):
                 ),
             )
 
+    # Contadores sem atividade há mais tempo que isso são apagados.
+    RETENCAO_TENTATIVAS = timedelta(days=1)
+
+    def limpar_tentativas_antigas(self):
+        """
+        Remove contadores antigos sem bloqueio ativo.
+
+        Tentativas com usuários inexistentes também criam contador (assim a
+        resposta é igual para usuário existente ou não, sem revelar quais
+        contas existem); a limpeza evita que a tabela cresça sem limite.
+        """
+        limite = timezone.now() - self.RETENCAO_TENTATIVAS
+
+        TentativaLogin.objects.filter(
+            atualizado_em__lt=limite,
+        ).exclude(
+            bloqueado_ate__gt=timezone.now(),
+        ).delete()
+
     def registrar_falha(self, username, ip):
         """
         Registra uma tentativa incorreta.
@@ -438,6 +457,8 @@ class LoginTokenSerializer(TokenObtainPairSerializer):
         A quinta tentativa inicia o bloqueio de 3 minutos.
         """
         espera = None
+
+        self.limpar_tentativas_antigas()
 
         with transaction.atomic():
 
@@ -613,4 +634,6 @@ class LogContaSerializer(serializers.ModelSerializer):
         if obj.usuario:
             return obj.usuario.username
 
-        return "Usuário removido"
+        # Sem usuário: login com usuário inexistente, comando de terminal
+        # ou conta excluída depois do evento.
+        return "Não identificado"
