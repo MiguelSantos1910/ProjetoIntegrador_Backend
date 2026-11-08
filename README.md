@@ -162,16 +162,19 @@ Para que o app no **emulador Android** ou num **celular na mesma rede** acesse a
 
 ### Variáveis de ambiente
 
-Todas estão em [`.env.example`](.env.example):
+Todas estão em [`.env.example`](.env.example); o modelo de produção é o [`.env.producao.example`](.env.producao.example):
 
 | Variável | Padrão | Em produção |
 |---|---|---|
-| `SECRET_KEY` | chave de desenvolvimento | chave forte e secreta |
+| `SECRET_KEY` | chave de desenvolvimento | chave forte e secreta (com `DEBUG=False`, a chave padrão é recusada) |
 | `DEBUG` | `True` | `False` |
 | `ALLOWED_HOSTS` | `*` | domínio ou IP do servidor |
 | `DATABASE_URL` | `sqlite:///db.sqlite3` | arquivo SQLite em disco persistente |
 | `CORS_ALLOW_ALL_ORIGINS` | `True` | `False` |
 | `CORS_ALLOWED_ORIGINS` | vazio | endereço do painel web |
+| `CSRF_TRUSTED_ORIGINS` | vazio | endereço da própria API em HTTPS (login do `/admin/`) |
+| `SECURE_SSL_REDIRECT` | `False` | `True` (redireciona HTTP para HTTPS) |
+| `SECURE_HSTS_SECONDS` | `0` | ativar depois que o HTTPS estiver estável |
 | `BACKUP_DIR` | `backups_banco/` | pasta em disco persistente |
 | `BACKUP_MAX` | `10` | quantos backups manter de cada tipo |
 
@@ -336,6 +339,8 @@ Detalhes, agendamento diário (cron) e roteiro de evidência com prints: [`docs/
 ## Publicação
 
 A instância publicada usada pelo app mobile roda num servidor na AWS, em `http://54.20.29.135/api`. Para produção, o projeto usa Gunicorn (comando em `startup.sh`). O repositório também traz a configuração para o Azure App Service (`WEBSITE_HOSTNAME` é aceito em `ALLOWED_HOSTS` automaticamente).
+
+**Guia passo a passo (gratuito, com HTTPS): [`docs/deploy.md`](docs/deploy.md)**: API no PythonAnywhere (disco persistente para o SQLite e os backups) e painel na Vercel.
 
 Em qualquer servidor:
 
