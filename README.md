@@ -338,7 +338,14 @@ Detalhes, agendamento diário (cron) e roteiro de evidência com prints: [`docs/
 
 ## Publicação
 
-A instância publicada usada pelo app mobile roda num servidor na AWS, em `http://54.20.29.135/api`. Para produção, o projeto usa Gunicorn (comando em `startup.sh`). O repositório também traz a configuração para o Azure App Service (`WEBSITE_HOSTNAME` é aceito em `ALLOWED_HOSTS` automaticamente).
+A versão publicada roda no **PythonAnywhere**, com HTTPS:
+
+| Parte | Endereço |
+|---|---|
+| API | https://miguel1910.pythonanywhere.com/api/ (teste: `/api/health/`) |
+| Painel web | https://projeto-integrador-frontend-beryl.vercel.app/ |
+
+O repositório também traz o comando do Gunicorn (`startup.sh`) e a configuração para o Azure App Service (`WEBSITE_HOSTNAME` é aceito em `ALLOWED_HOSTS` automaticamente), para outros servidores.
 
 **Guia passo a passo (gratuito, com HTTPS): [`docs/deploy.md`](docs/deploy.md)**: API no PythonAnywhere (disco persistente para o SQLite e os backups) e painel na Vercel.
 
@@ -349,25 +356,25 @@ Em qualquer servidor:
 3. Aponte `DATABASE_URL` e `BACKUP_DIR` para um **disco persistente**, fora da pasta substituída a cada deploy.
 4. Agende o backup diário (ver `docs/backup.md`).
 5. Rode `python manage.py check --deploy` e trate os avisos.
-6. Publique com **HTTPS**. Hoje o servidor responde em HTTP (risco R9 em `docs/seguranca.md`).
+6. Publique com **HTTPS** (risco R9 em `docs/seguranca.md`).
 
 O SQLite atende o MVP, mas tem limite para muitas gravações simultâneas (`database is locked`).
 
 ## Integração com o painel web e o app
 
-- **Painel web (Vue.js):** configure `VITE_APP_API_URL` no `.env` do front, por exemplo `http://127.0.0.1:8000/api`. Para ver os mesmos dados do app, use a URL do servidor publicado.
-- **App (Flutter):** a URL padrão é a do servidor publicado. Para a API local: `flutter run --dart-define=API_URL=http://10.0.2.2:8000/api` (emulador).
+- **Painel web (Vue.js):** configure `VITE_APP_API_URL` no `.env` do front, por exemplo `http://127.0.0.1:8000/api`. Para ver os mesmos dados do app, use a API publicada (`https://miguel1910.pythonanywhere.com/api`).
+- **App (Flutter):** a URL vem do `--dart-define=API_URL=...` no `flutter run` ou no `flutter build apk`. Para a API publicada: `--dart-define=API_URL=https://miguel1910.pythonanywhere.com/api`; para a local no emulador: `--dart-define=API_URL=http://10.0.2.2:8000/api`.
 - **QR Code:** o app lê o `codigo_qr` e consulta `GET /api/ativos/?codigo_qr=<código>`.
 - **Movimentação pelo app:** mude o status do ativo com `PATCH /api/ativos/<id>/`. O histórico é gravado pelo back, e `POST /api/historico/` é bloqueado.
 
 ## Limitações conhecidas
 
-- Sem HTTPS no servidor publicado (R9) e configuração de produção ainda padrão (R10).
-- Mudança de papel e de senha ainda não gera evento de auditoria.
+- O `/admin/` do Django continua exposto e não tem o bloqueio por tentativas do login da API (R9, residual).
+- O token do painel fica no `localStorage` e o access dura 8 h (R7).
+- O HSTS está desligado de propósito (`SECURE_HSTS_SECONDS`), até o HTTPS estar estável.
 - Sem paginação nas listagens e sem versão na URL da API (`/v1`).
 - Setor e laboratório são o campo de texto `sala`, sem cadastro próprio.
 - As categorias são os tipos fixos do modelo.
-- Mudança de sala não gera evento no histórico.
 
 ## Créditos e licenças
 
@@ -381,6 +388,6 @@ Os dados de demonstração (`seed_ativos`) são fictícios.
 |---|---|
 | Back-end (este) | https://github.com/MiguelSantos1910/ProjetoIntegrador_Backend |
 | Painel web | https://github.com/MiguelSantos1910/ProjetoIntegrador_Frontend |
-| Aplicativo mobile | https://github.com/LANDOSOUZA/pi4-mobile-lando |
+| Aplicativo mobile | https://github.com/MiguelSantos1910/ProjetoIntegrador_Mobile |
 
 **Projeto:** Easy Asset, Projeto Integrador IV, ADS, SENAI Roberto Mange.
