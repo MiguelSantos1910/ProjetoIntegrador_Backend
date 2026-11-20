@@ -6,7 +6,13 @@ plano de ensino do PI IV.
 
 Escopo: API Django/DRF (este repositório), painel web Vue
 ([ProjetoIntegrador_Frontend](https://github.com/MiguelSantos1910/ProjetoIntegrador_Frontend))
-e aplicativo Flutter (repositório `pi4-mobile-lando`), que consomem esta API.
+e aplicativo Flutter
+([ProjetoIntegrador_Mobile](https://github.com/MiguelSantos1910/ProjetoIntegrador_Mobile)),
+que consomem esta API.
+
+Publicação atual (ver [`deploy.md`](deploy.md)): API em
+`https://miguel1910.pythonanywhere.com/api/` (PythonAnywhere) e painel na
+Vercel, ambos com HTTPS.
 
 ## 1. Ativos de informação
 
@@ -35,13 +41,13 @@ automatizado que comprova a medida (`python manage.py test`).
 | R5 | **Perda de rastreabilidade**: excluir ativo, ordem ou histórico | M | A | Ninguém exclui pela API (403); ativos são inativados; histórico e logs são somente leitura; mudanças de status geram eventos | Implementado | `test_ativo_nao_pode_ser_excluido`, `test_historico_nao_pode_ser_criado_editado_ou_apagado`, `test_ninguem_exclui_ordem`, `ativos.tests.HistoricoMudancaStatusTestCase` |
 | R6 | **Senhas fracas ou expostas** | M | A | Validadores do Django (tamanho mínimo, senha comum, só números, parecida com o usuário); hash PBKDF2; a senha nunca é gravada em log ; a troca da própria senha exige a senha atual | Implementado | `test_senha_fraca_recusada`, `test_cadastro_publico_cria_aluno`, `test_log_nao_grava_a_senha`, `test_propria_senha_exige_senha_atual` |
 | R7 | **Sessão reutilizada** após o logout ou token roubado | M | M | Refresh rotacionado e colocado na blacklist; logout invalida o refresh; trocar a senha ou desativar a conta encerra todas as sessões. Access dura 8 h | Parcial: access longo e token no `localStorage` do painel (sensível a XSS) | `LogoutTestCase.test_logout_invalida_o_refresh_token`, `test_troca_de_senha_encerra_sessoes` |
-| R8 | **Perda ou corrupção do banco** | M | A | Backup com a API do SQLite, verificação de integridade, retenção, backup automático antes de restaurar, restauração testada e download para guardar uma cópia fora do servidor | Implementado; pendente: `BACKUP_DIR` persistente no servidor e cron | `backups.tests` (11 testes), [`docs/backup.md`](backup.md) |
+| R8 | **Perda ou corrupção do banco** | M | A | Backup com a API do SQLite, verificação de integridade, retenção, backup automático antes de restaurar, restauração testada e download para guardar uma cópia fora do servidor | Implementado. Na publicação, o disco do PythonAnywhere é persistente; o backup diário é agendado na aba **Tasks** ([`deploy.md`](deploy.md), passo 7) | `backups.tests` (11 testes), [`docs/backup.md`](backup.md) |
 | R15 | **Vazamento pelo download do backup**: o arquivo tem os hashes de senha de todos | B | A | Download só para o professor, nome validado (só arquivos do sistema), evento `BACKUP_BAIXADO` na auditoria e resposta sem cache; orientação de guardar a cópia em local privado | Implementado; o cuidado com a cópia baixada depende de quem baixa (política, item 6) | `test_professor_baixa_backup_com_log`, `test_aluno_e_suporte_nao_baixam`, `test_download_so_de_arquivos_do_sistema` |
-| R9 | **Interceptação do tráfego**: servidor publicado em HTTP (senha e token sem criptografia), app com `usesCleartextTraffic` e `/admin/` exposto | M | A | Nenhuma ainda | **Risco aceito temporariamente**; publicar com HTTPS (domínio e certificado) e restringir `/admin/` | — |
-| R10 | **Configuração insegura em produção**: `SECRET_KEY` padrão, `DEBUG=True`, `ALLOWED_HOSTS=*`, CORS aberto | M | A | Todas são lidas de variáveis de ambiente (`.env`), sem segredo real no código | Pendente na produção: definir os valores; `check --deploy` mostra 6 avisos | `python manage.py check --deploy` |
+| R9 | **Interceptação do tráfego**: senha e token trafegando sem criptografia | M | A | API e painel publicados só em **HTTPS** (PythonAnywhere com *Force HTTPS* e Vercel); `SECURE_SSL_REDIRECT`, cookies `Secure` e `SECURE_PROXY_SSL_HEADER` com `DEBUG=False`; o APK aponta para a URL HTTPS | Implementado. Residual: o app mantém `usesCleartextTraffic` só para testar com o back local em HTTP; o `/admin/` do Django continua exposto (protegido por senha, mas sem o bloqueio por tentativas do login da API) | `curl -I http://miguel1910.pythonanywhere.com/api/health/` redireciona para HTTPS |
+| R10 | **Configuração insegura em produção**: `SECRET_KEY` padrão, `DEBUG=True`, `ALLOWED_HOSTS=*`, CORS aberto | M | A | Tudo vem do `.env` do servidor ([`.env.producao.example`](../.env.producao.example)): `SECRET_KEY` própria, `DEBUG=False`, `ALLOWED_HOSTS` só com o domínio, CORS só para o painel e `CSRF_TRUSTED_ORIGINS`. Com `DEBUG=False`, o Django **se recusa a subir** com a chave padrão | Implementado. `check --deploy` caiu de 6 avisos para 1 (HSTS, desligado de propósito até o HTTPS estar estável). Origens de teste (ex.: `http://localhost:5555`) devem sair do CORS depois dos testes | `python manage.py check --deploy` |
 | R11 | **Segredos ou dados reais no Git** | B | A | `.env`, `db.sqlite3` e `backups_banco/` no `.gitignore`; `.env.example` sem segredos no painel; dados de demonstração fictícios (`seed_ativos`) | Implementado. Observação: um backup antigo ficou no histórico de outro repositório do back; a senha do administrador da AWS foi trocada | — |
 | R12 | **Entrada inválida** (status, tipo ou campos fora do esperado) | M | M | Validação nos serializers do DRF (choices, campos obrigatórios, custo não negativo, latitude e longitude em intervalos válidos, patrimônio vazio tratado como nulo); erros 400 com mensagem, sem detalhes internos | Implementado | `test_status_invalido_recusado`, `test_custo_negativo_recusado`, `test_coordenadas_fora_do_intervalo`, `test_varios_ativos_sem_patrimonio` |
-| R13 | **Instâncias divergentes**: servidor publicado rodando código diferente do GitHub | A | M | Nenhuma ainda | Pendente: atualizar o servidor com o `main` e versionar o que só existe lá | — |
+| R13 | **Instâncias divergentes**: servidor publicado rodando código diferente do GitHub | A | M | O servidor é um `git clone` do `main`; atualizar é `git pull` + `migrate` + *Reload* ([`deploy.md`](deploy.md), passo 8); a versão final é a tag `v1.0.0` | Implementado. A antiga instância da AWS (`54.20.29.135`) deixou de ser a referência e deve ser desligada | — |
 | R14 | **Ações sensíveis sem registro**: mudança de papel e de senha | M | M | Logs de login, falha, bloqueio, logout, cadastro, backup, ordens, status e sala de ativos, mudança de papel, desativação, exclusão de usuário e troca de senha | Implementado | `test_mudanca_de_papel_e_desativacao_geram_log`, `test_exclusao_gera_log`, `test_mudanca_de_sala_gera_evento` |
 
 ## 3. Casos de mau uso (objetivo negativo)
@@ -69,9 +75,65 @@ automatizado que comprova a medida (`python manage.py test`).
 | **S**poofing (falsificar identidade) | Adivinhar a senha de um professor | Senha validada e com hash, bloqueio por tentativas (R1, R6) |
 | **T**ampering (adulterar dados) | Aluno mudando status de ativo | RBAC no back (R4); histórico somente leitura (R5) |
 | **R**epudiation (negar a ação) | "Não fui eu que inativei" | Histórico com usuário e data; auditoria de contas (R14) |
-| **I**nformation disclosure (vazar dados) | Token capturado em rede aberta | Pendente: HTTPS (R9); dados mínimos (seção 7) |
+| **I**nformation disclosure (vazar dados) | Token capturado em rede aberta | HTTPS na API e no painel (R9); CORS restrito (R10); dados mínimos (seção 7) |
 | **D**enial of service (indisponibilidade) | Perda do banco | Backup e restauração (R8); bloqueio limita força bruta |
 | **E**levation of privilege (elevar privilégio) | Autocadastro como professor | Cadastro sempre ALUNO, papel só pelo professor (R3) |
+
+### 4.1 Diagrama de fluxo de dados
+
+Elementos, fluxos e **fronteiras de confiança** (as caixas tracejadas). Os
+números nas setas ligam cada fluxo às ameaças da tabela abaixo.
+
+```mermaid
+flowchart LR
+    U1([Professor / Suporte / Aluno<br/>navegador])
+    U2([Usuário no laboratório<br/>celular Android])
+    ETQ[/"Etiqueta QR<br/>no equipamento"/]
+
+    subgraph INTERNET[Internet - não confiável]
+        direction TB
+        U1
+        U2
+        ETQ
+    end
+
+    subgraph VERCEL[Vercel - hospedagem estática]
+        WEB[Painel web<br/>Vue 3]
+    end
+
+    subgraph PA[PythonAnywhere - servidor da API]
+        API[["API Django/DRF<br/>JWT + RBAC + validação"]]
+        ADM[["Django Admin<br/>/admin/"]]
+        DB[(SQLite<br/>usuários, ativos,<br/>histórico, ordens, logs)]
+        BK[(backups_banco/<br/>cópias do banco)]
+        ENV[/"arquivo .env<br/>SECRET_KEY, CORS"/]
+    end
+
+    U1 -- "1. HTTPS: baixa o painel" --> WEB
+    WEB -- "2. HTTPS + JWT: login, consultas, cadastros" --> API
+    ETQ -. "3. leitura da câmera (UUID)" .-> U2
+    U2 -- "4. HTTPS + JWT: consulta pelo QR, chamados" --> API
+    API -- "5. ORM (sem SQL manual)" --> DB
+    API -- "6. backup / restauração (só professor)" --> BK
+    BK -- "7. download do backup (só professor)" --> U1
+    U1 -- "8. HTTPS: login do admin" --> ADM
+    ADM --> DB
+    ENV -. "configuração" .-> API
+
+    style INTERNET stroke-dasharray: 5 5
+    style VERCEL stroke-dasharray: 5 5
+    style PA stroke-dasharray: 5 5
+```
+
+| Fluxo / elemento | Ameaças (STRIDE) | Controles |
+|---|---|---|
+| 2 e 4 — chamadas à API | S, T, I, E | HTTPS; JWT com expiração e blacklist; RBAC no back (R2–R4); validação nos serializers (R12); bloqueio de força bruta no login (R1) |
+| 3 — etiqueta QR | T, S | O QR só contém o `codigo_qr` (UUID imutável), sem dados; o app valida o formato e consulta a API; QR falso mostra "não reconhecido" |
+| 5 — banco | T, R, I | Só a API acessa; histórico e logs somente leitura e sem exclusão (R5, R14); senhas com hash (R6) |
+| 6 e 7 — backups | I, D | Só professor; nome validado contra *path traversal*; download registrado (R8, R15); cópia antes de restaurar |
+| 8 — Django Admin | S, E | Senha forte e HTTPS; **residual**: sem bloqueio por tentativas, restringir o acesso é evolução (R9) |
+| `.env` | I | Fora do Git; segredos só no servidor (R10, R11) |
+| Painel no navegador | I | Token no `localStorage`, sensível a XSS (R7, residual) |
 
 ## 5. O que é registrado em log
 
@@ -93,7 +155,7 @@ automatizado que comprova a medida (`python manage.py test`).
 | Item | Definição |
 |---|---|
 | O que é copiado | O banco inteiro (ativos, usuários, ordens, históricos e logs) |
-| Frequência | Diária, às 2h, pelo cron do servidor (`backup_banco`); também sob demanda pelo painel |
+| Frequência | Diária, por tarefa agendada no servidor (`backup_banco`; no PythonAnywhere, aba **Tasks**); também sob demanda pelo painel |
 | RPO (perda máxima aceitável) | 24 horas, com o backup diário |
 | RTO (tempo para voltar a funcionar) | Cerca de 10 minutos: restaurar pelo painel ou pelo terminal |
 | Retenção | Os 10 backups mais recentes de cada tipo (`BACKUP_MAX`) |
